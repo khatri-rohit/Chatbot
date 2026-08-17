@@ -1,3 +1,5 @@
+"use client";
+
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import {
   useContext,
@@ -6,11 +8,11 @@ import {
   useState,
   useMemo,
 } from "react";
-import { useChat, UIMessage } from "@ai-sdk/react";
+import { useChat, UIMessage, type UseChatHelpers } from "@ai-sdk/react";
 import {
   ChatStatus,
   DefaultChatTransport,
-  lastAssistantMessageIsCompleteWithToolCalls,
+  lastAssistantMessageIsCompleteWithApprovalResponses,
 } from "ai";
 
 const ActiveChatContext = createContext<ActiveChatContextValue | null>(null);
@@ -23,6 +25,7 @@ interface ActiveChatContextValue {
   status: ChatStatus;
   stop: () => Promise<any | undefined>;
   error: any;
+  addToolApprovalResponse: UseChatHelpers<UIMessage>["addToolApprovalResponse"];
 }
 
 export const ActiveChatProvider = ({
@@ -32,16 +35,17 @@ export const ActiveChatProvider = ({
 }) => {
   const [input, setInput] = useState("");
 
-  const { messages, setMessages, sendMessage, status, stop, error } = useChat({
+  const {
+    messages,
+    setMessages,
+    sendMessage,
+    status,
+    stop,
+    error,
+    addToolApprovalResponse,
+  } = useChat({
     transport: new DefaultChatTransport({ api: "/api/chat" }),
-    // sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
-    async onToolCall({ toolCall }) {
-      if (toolCall.dynamic) {
-        return;
-      }
-      console.log(toolCall.toolCallId);
-      console.log(toolCall.toolName);
-    },
+    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
   });
 
   const value = useMemo<ActiveChatContextValue>(
@@ -54,8 +58,19 @@ export const ActiveChatProvider = ({
       status,
       stop,
       error,
+      addToolApprovalResponse,
     }),
-    [input, setInput, messages, setMessages, sendMessage, status, stop, error],
+    [
+      input,
+      setInput,
+      messages,
+      setMessages,
+      sendMessage,
+      status,
+      stop,
+      error,
+      addToolApprovalResponse,
+    ],
   );
   return (
     <ActiveChatContext.Provider value={value}>

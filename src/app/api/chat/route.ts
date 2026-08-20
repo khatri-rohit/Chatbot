@@ -14,7 +14,9 @@ import { getWeather } from "../../../../lib/ai/tools/get-weather";
 export const maxDuration = 30;
 export async function POST(req: NextRequest) {
   const { messages }: { messages: UIMessage[] } = await req.json();
+
   const ollama = initializeOllama();
+
   const stream = createUIMessageStream({
     originalMessages: messages,
     execute: async ({ writer }) => {

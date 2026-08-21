@@ -117,11 +117,6 @@ export async function POST(request: NextRequest) {
   You can use the information in the document to answer the questions.
   You can use the information in the document to answer the questions.
 
-  The summary should be in the following format:
-  {
-    summary: "The summary of the chunk.",
-    sources: ["The sources of the summary."],
-  }
   `;
 
   const chunkAnalystSubagent = {
@@ -165,12 +160,6 @@ export async function POST(request: NextRequest) {
     systemPrompt:
       "You are a helpful assistant that can answer questions about the document. You can use the tools provided to you to answer the questions. You can also use the information in the document to answer the questions.",
     subagents: [chunkAnalystSubagent],
-    // responseFormat: providerStrategy(
-    //   z.object({
-    //     answer: z.string().describe("The answer to the question."),
-    //     sources: z.array(z.string()).describe("The sources of the answer."),
-    //   }),
-    // ),
   });
 
   const result = await agent.invoke({

@@ -44,7 +44,7 @@ export const ActiveChatProvider = ({
     error,
     addToolApprovalResponse,
   } = useChat({
-    transport: new DefaultChatTransport({ api: "/api/chat" }),
+    transport: new DefaultChatTransport({ api: "/api/pdf" }),
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
   });
 

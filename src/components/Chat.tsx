@@ -156,7 +156,21 @@ const Chat = () => {
                           </p>
                         );
                       }
-                    } else if (!isReponseDone && type === "data-status")
+                    } else if (type === "data-status") {
+                      const phase = (part as { data?: { phase?: string } }).data
+                        ?.phase;
+                      return (
+                        <p
+                          key={`${message.id}-${i}`}
+                          className="text-xs text-zinc-500"
+                        >
+                          {phase === "searching" && "Searching resume…"}
+                          {phase === "analyzing" &&
+                            "Reading matching sections…"}
+                          {phase === "thinking" && "Thinking…"}
+                        </p>
+                      );
+                    } else if (!isReponseDone && type === "data-status") {
                       return (
                         <span
                           key={`${message.id}-${i}`}
@@ -165,6 +179,7 @@ const Chat = () => {
                           <Loader2 className="size-4" />
                         </span>
                       );
+                    }
                   })}
                 </div>
               ))}

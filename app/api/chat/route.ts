@@ -81,7 +81,7 @@ export async function POST(req: Request) {
 
                 // HITL: if LangGraph paused (interruptOn), tell the UI.
                 const snapshot = await agent.getState(config);
-                console.log(snapshot);
+                // console.log(snapshot);
                 const hitl = extractHitlData(snapshot, threadId);
                 if (hitl) {
                     writer.write({

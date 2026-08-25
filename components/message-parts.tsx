@@ -74,15 +74,12 @@ export function MessageParts({
                     return (
                         <ToolCard
                             key={
-                                part.toolCallId ??
-                                `${message.id}-tool-${index}`
+                                part.toolCallId ?? `${message.id}-tool-${index}`
                             }
                             name={getToolName(part)}
                             state={part.state}
                             input={'input' in part ? part.input : undefined}
-                            output={
-                                'output' in part ? part.output : undefined
-                            }
+                            output={'output' in part ? part.output : undefined}
                             onHitl={
                                 part.state === 'approval-requested'
                                     ? onHitl
@@ -166,7 +163,7 @@ function ToolCard({
     onHitl?: (decision: HitlDecision) => void;
 }) {
     return (
-        <div className="border border-dashed border-(--rule) px-4 py-3">
+        <div className="border border-dashed border-(--rule) px-4 py-3 overflow-x-auto">
             <p className="font-mono text-[10px] tracking-[0.22em] text-sage uppercase">
                 Tool · {name} · {state}
             </p>
@@ -178,8 +175,8 @@ function ToolCard({
             {output != null && state.includes('output') ? (
                 <p className="mt-1 text-sm text-ink">
                     {typeof output === 'string'
-                        ? output
-                        : JSON.stringify(output)}
+                        ? output.slice(0, 100)
+                        : JSON.stringify(output).slice(0, 100)}
                 </p>
             ) : null}
             {onHitl ? (

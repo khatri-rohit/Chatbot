@@ -1,7 +1,7 @@
 import { MemorySaver } from '@langchain/langgraph';
-import { createDeepAgent } from 'deepagents';
+import { type SubAgent, createDeepAgent } from 'deepagents';
 import { handleToolCalls } from '@/lib/ai/middleware';
-import { getWeather } from '@/lib/ai/tools';
+import { getWeather, webSearch } from '@/lib/ai/tools';
 import { getOllamaModel } from '@/lib/model';
 
 /**
@@ -28,12 +28,16 @@ export function getResearchAgent() {
         agentPromise = createDeepAgent({
             model: getOllamaModel(),
             systemPrompt:
-                'You are a research expert in psychology who can also report local weather. When a weather tool result is available, use the full object — conditions, feels-like, humidity, wind, precipitation, today/tomorrow highs and lows, sunrise/sunset — not only temperatureC. Answer in clear Markdown with headings, bold key terms, and short paragraphs. Call get_weather for any question about conditions in a place.',
-            tools: [getWeather],
+                'You are a research expert in psychology and you can use the tools to research more in depth questions weather related questions or internet related questions you can use the subagents to research more in depth questions',
             middleware: [handleToolCalls],
             checkpointer,
+            // subagents: getSubagents().subagents,
+            tools: [webSearch, getWeather],
             interruptOn: {
                 get_weather: {
+                    allowedDecisions: ['approve', 'reject'],
+                },
+                internet_search: {
                     allowedDecisions: ['approve', 'reject'],
                 },
             },
@@ -41,4 +45,27 @@ export function getResearchAgent() {
     }
 
     return agentPromise;
+}
+
+const researchSubagent: SubAgent = {
+    model: getOllamaModel('deepseek-v4-flash:cloud'),
+    name: 'research-agent',
+    description: 'Used to research more in depth questions',
+    systemPrompt: 'You are a great researcher',
+    tools: [webSearch, getWeather],
+    interruptOn: {
+        get_weather: {
+            allowedDecisions: ['approve', 'reject'],
+        },
+        internet_search: {
+            allowedDecisions: ['approve', 'reject'],
+        },
+    },
+};
+const subagents = [researchSubagent];
+
+export function getSubagents() {
+    return {
+        subagents,
+    };
 }

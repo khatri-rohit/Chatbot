@@ -17,6 +17,85 @@ import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
 import { FormEvent, useEffect, useRef, useState } from 'react';
 
+function CopyIcon() {
+    return (
+        <svg
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.35"
+            strokeLinejoin="round"
+            aria-hidden
+            className="h-3.5 w-3.5"
+        >
+            <rect x="5.5" y="5.5" width="8" height="8" rx="1" />
+            <path d="M10.5 5.5V4a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1H5.5" />
+        </svg>
+    );
+}
+
+function CheckIcon() {
+    return (
+        <svg
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+            className="h-3.5 w-3.5"
+        >
+            <path d="M3.5 8.5 6.5 11.5 12.5 4.5" />
+        </svg>
+    );
+}
+
+function UserMessage({ text }: { text: string }) {
+    const [copied, setCopied] = useState(false);
+    const resetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    useEffect(() => {
+        return () => {
+            if (resetRef.current) clearTimeout(resetRef.current);
+        };
+    }, []);
+
+    const copy = async () => {
+        if (!text) return;
+        try {
+            await navigator.clipboard.writeText(text);
+            setCopied(true);
+            if (resetRef.current) clearTimeout(resetRef.current);
+            resetRef.current = setTimeout(() => setCopied(false), 1600);
+        } catch {
+            /* clipboard may be blocked */
+        }
+    };
+
+    return (
+        <article className="ml-auto max-w-[85%]">
+            <p className="mb-2 text-right font-mono text-[10px] tracking-[0.22em] text-ink-soft uppercase">
+                You
+            </p>
+            <div className="relative">
+                <p className="rounded-sm bg-ink px-4 py-3 pr-11 text-paper">
+                    {text}
+                </p>
+                <button
+                    type="button"
+                    onClick={copy}
+                    disabled={!text}
+                    aria-label={copied ? 'Copied' : 'Copy message'}
+                    className="absolute top-1.5 right-1.5 flex h-7 w-7 items-center justify-center rounded-sm text-paper/55 transition-colors hover:bg-paper/10 hover:text-paper focus-visible:bg-paper/10 focus-visible:text-paper focus-visible:ring-2 focus-visible:ring-sienna/50 focus-visible:outline-none disabled:opacity-30"
+                >
+                    {copied ? <CheckIcon /> : <CopyIcon />}
+                </button>
+            </div>
+        </article>
+    );
+}
+
 const resumeHolders = new WeakMap<
     DefaultChatTransport<DeskUIMessage>,
     { resume: { decisions: HitlDecision[] } | null }
@@ -118,20 +197,15 @@ export default function ChatView() {
                             return (
                                 <li key={message.id}>
                                     {message.role === 'user' ? (
-                                        <article className="ml-auto max-w-[85%]">
-                                            <p className="mb-2 text-right font-mono text-[10px] tracking-[0.22em] text-ink-soft uppercase">
-                                                You
-                                            </p>
-                                            <p className="rounded-sm bg-ink px-4 py-3 text-paper">
-                                                {message.parts
-                                                    .flatMap((part) =>
-                                                        part.type === 'text'
-                                                            ? [part.text]
-                                                            : [],
-                                                    )
-                                                    .join('')}
-                                            </p>
-                                        </article>
+                                        <UserMessage
+                                            text={message.parts
+                                                .flatMap((part) =>
+                                                    part.type === 'text'
+                                                        ? [part.text]
+                                                        : [],
+                                                )
+                                                .join('')}
+                                        />
                                     ) : (
                                         <article aria-live="polite">
                                             <p className="mb-2 font-mono text-[10px] tracking-[0.22em] text-sage uppercase">

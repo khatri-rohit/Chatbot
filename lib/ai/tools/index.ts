@@ -1,5 +1,21 @@
 import { type ToolRuntime, tool } from 'langchain';
 import { z } from 'zod';
+import { firecrawlSearch } from './firecrawl';
+
+export const webSearch = tool(
+    async (input) => {
+        const results = await firecrawlSearch(input.query as string);
+        console.log('results', results);
+        return results;
+    },
+    {
+        name: 'internet_search',
+        description: 'Run a web search',
+        schema: z.object({
+            query: z.string(),
+        }),
+    },
+);
 
 /**
  * LangChain tool registered on the Deep Agent (`lib/ai/agent.ts`).

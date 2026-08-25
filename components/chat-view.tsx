@@ -1,13 +1,12 @@
 'use client';
 
-import dynamic from 'next/dynamic';
 import { FormEvent, useEffect, useRef, useState } from 'react';
+import { Streamdown } from 'streamdown';
+import { code } from '@streamdown/code';
+import { mermaid } from '@streamdown/mermaid';
+import { math } from '@streamdown/math';
+import { cjk } from '@streamdown/cjk';
 import EmptyState from './EmptyState';
-
-const Streamdown = dynamic(
-    () => import('streamdown').then((mod) => mod.Streamdown),
-    { ssr: false },
-);
 
 type Role = 'user' | 'assistant';
 
@@ -186,8 +185,12 @@ export default function ChatView() {
                                             {message.content ? (
                                                 <Streamdown
                                                     className="assistant-markdown"
-                                                    mode="streaming"
-                                                    animated
+                                                    plugins={{
+                                                        code,
+                                                        mermaid,
+                                                        math,
+                                                        cjk,
+                                                    }}
                                                     isAnimating={streamingThis}
                                                 >
                                                     {message.content}

@@ -2,7 +2,7 @@ function EmptyState({ onPick }: { onPick: (prompt: string) => void }) {
     const prompts = [
         'What is human emotion?',
         'How does working memory differ from long-term memory?',
-        'Explain attachment theory in plain language.',
+        "What's the weather in Ajmer?",
     ];
 
     return (

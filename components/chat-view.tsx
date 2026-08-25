@@ -1,134 +1,84 @@
 'use client';
 
+/**
+ * Chat UI — AI SDK `useChat` talking to Deep Agents through `/api/chat`.
+ *
+ * Connection map:
+ *   sendMessage({ text })  →  DefaultChatTransport POST { id, messages }
+ *   /api/chat              →  Deep Agent stream → toUIMessageStream
+ *   messages[].parts       →  MessageParts (Streamdown + tools + HITL)
+ *   Approve/Deny           →  regenerate() with resume.decisions
+ *                            →  LangGraph Command on the same thread id
+ */
+import { MessageParts } from '@/components/message-parts';
+import EmptyState from '@/components/EmptyState';
+import type { DeskUIMessage, HitlDecision } from '@/lib/ai/types';
+import { useChat } from '@ai-sdk/react';
+import { DefaultChatTransport } from 'ai';
 import { FormEvent, useEffect, useRef, useState } from 'react';
-import { Streamdown } from 'streamdown';
-import { code } from '@streamdown/code';
-import { mermaid } from '@streamdown/mermaid';
-import { math } from '@streamdown/math';
-import { cjk } from '@streamdown/cjk';
-import EmptyState from './EmptyState';
 
-type Role = 'user' | 'assistant';
+const resumeHolders = new WeakMap<
+    DefaultChatTransport<DeskUIMessage>,
+    { resume: { decisions: HitlDecision[] } | null }
+>();
 
-type ChatMessage = {
-    id: string;
-    role: Role;
-    content: string;
-};
+function createDeskTransport() {
+    const holder: { resume: { decisions: HitlDecision[] } | null } = {
+        resume: null,
+    };
+    const transport = new DefaultChatTransport<DeskUIMessage>({
+        api: '/api/chat',
+        prepareSendMessagesRequest: ({ id, messages }) => ({
+            body: {
+                id,
+                messages,
+                resume: holder.resume ?? undefined,
+            },
+        }),
+    });
+    resumeHolders.set(transport, holder);
+    return transport;
+}
+
+function setTransportResume(
+    transport: DefaultChatTransport<DeskUIMessage>,
+    resume: { decisions: HitlDecision[] } | null,
+) {
+    const holder = resumeHolders.get(transport);
+    if (holder) holder.resume = resume;
+}
 
 export default function ChatView() {
-    const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [draft, setDraft] = useState('');
-    const [status, setStatus] = useState<'idle' | 'streaming' | 'error'>(
-        'idle',
-    );
-    const [error, setError] = useState<string | null>(null);
-    const abortRef = useRef<AbortController | null>(null);
     const endRef = useRef<HTMLDivElement>(null);
+    const [transport] = useState(createDeskTransport);
+
+    const { messages, sendMessage, regenerate, status, stop, error } =
+        useChat<DeskUIMessage>({
+            transport,
+        });
 
     useEffect(() => {
         endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }, [messages, status]);
 
-    useEffect(() => {
-        return () => abortRef.current?.abort();
-    }, []);
-
-    const stop = () => {
-        abortRef.current?.abort();
-        abortRef.current = null;
-        setStatus('idle');
-    };
-
-    const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    const onSubmit = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         const query = draft.trim();
-        if (!query || status === 'streaming') return;
-
-        const userMessage: ChatMessage = {
-            id: crypto.randomUUID(),
-            role: 'user',
-            content: query,
-        };
-        const assistantMessage: ChatMessage = {
-            id: crypto.randomUUID(),
-            role: 'assistant',
-            content: '',
-        };
-
-        const history = [...messages, userMessage];
-        setMessages([...history, assistantMessage]);
+        if (!query || status !== 'ready') return;
+        setTransportResume(transport, null);
         setDraft('');
-        setError(null);
-        setStatus('streaming');
-
-        abortRef.current?.abort();
-        const controller = new AbortController();
-        abortRef.current = controller;
-
-        try {
-            const response = await fetch('/api/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                signal: controller.signal,
-                body: JSON.stringify({
-                    messages: history.map(({ role, content }) => ({
-                        role,
-                        content,
-                    })),
-                }),
-            });
-
-            if (!response.ok) {
-                const payload = (await response.json().catch(() => null)) as {
-                    error?: string;
-                } | null;
-                throw new Error(
-                    payload?.error ?? 'The desk could not reach the model.',
-                );
-            }
-
-            if (!response.body) {
-                throw new Error('No response stream was returned.');
-            }
-
-            const reader = response.body
-                .pipeThrough(new TextDecoderStream())
-                .getReader();
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                if (!value) continue;
-
-                setMessages((current) => {
-                    const next = [...current];
-                    const last = next.at(-1);
-                    if (!last || last.role !== 'assistant') return current;
-                    next[next.length - 1] = {
-                        ...last,
-                        content: last.content + value,
-                    };
-                    return next;
-                });
-            }
-
-            setStatus('idle');
-        } catch (cause) {
-            if (controller.signal.aborted) {
-                setStatus('idle');
-                return;
-            }
-            setStatus('error');
-            setError(
-                cause instanceof Error ? cause.message : 'Streaming failed.',
-            );
-        } finally {
-            if (abortRef.current === controller) {
-                abortRef.current = null;
-            }
-        }
+        void sendMessage({ text: query });
     };
+
+    const onHitl = (decision: HitlDecision) => {
+        setTransportResume(transport, { decisions: [decision] });
+        void regenerate().finally(() => {
+            setTransportResume(transport, null);
+        });
+    };
+
+    const busy = status === 'submitted' || status === 'streaming';
 
     return (
         <main className="relative flex min-h-dvh flex-col">
@@ -145,13 +95,12 @@ export default function ChatView() {
                         Atelier
                     </h1>
                     <p className="mt-2 max-w-md text-[15px] text-ink-soft">
-                        Ask a psychology question. Answers stream in as typeset
-                        notes — bold, lists, and line breaks rendered, not shown
-                        as markup.
+                        UI messages stream from the Deep Agent. Markdown is
+                        typeset live; tools and approvals show as cards.
                     </p>
                 </div>
                 <span className="hidden font-mono text-[11px] tracking-widest text-sage uppercase sm:block">
-                    {status === 'streaming' ? 'In session' : 'Idle'}
+                    {busy ? 'In session' : 'Idle'}
                 </span>
             </header>
 
@@ -162,7 +111,7 @@ export default function ChatView() {
                     <ol className="flex flex-col gap-8">
                         {messages.map((message, index) => {
                             const streamingThis =
-                                status === 'streaming' &&
+                                busy &&
                                 index === messages.length - 1 &&
                                 message.role === 'assistant';
 
@@ -174,7 +123,13 @@ export default function ChatView() {
                                                 You
                                             </p>
                                             <p className="rounded-sm bg-ink px-4 py-3 text-paper">
-                                                {message.content}
+                                                {message.parts
+                                                    .flatMap((part) =>
+                                                        part.type === 'text'
+                                                            ? [part.text]
+                                                            : [],
+                                                    )
+                                                    .join('')}
                                             </p>
                                         </article>
                                     ) : (
@@ -182,29 +137,15 @@ export default function ChatView() {
                                             <p className="mb-2 font-mono text-[10px] tracking-[0.22em] text-sage uppercase">
                                                 Desk
                                             </p>
-                                            {message.content ? (
-                                                <Streamdown
-                                                    className="assistant-markdown"
-                                                    plugins={{
-                                                        code,
-                                                        mermaid,
-                                                        math,
-                                                        cjk,
-                                                    }}
-                                                    isAnimating={streamingThis}
-                                                >
-                                                    {message.content}
-                                                </Streamdown>
-                                            ) : (
-                                                <p className="font-mono text-sm tracking-wide text-ink-soft">
-                                                    Composing
-                                                    <span className="ml-1 inline-flex gap-1">
-                                                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sienna" />
-                                                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sienna [animation-delay:120ms]" />
-                                                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sienna [animation-delay:240ms]" />
-                                                    </span>
-                                                </p>
-                                            )}
+                                            <MessageParts
+                                                message={message}
+                                                isStreaming={streamingThis}
+                                                onHitl={
+                                                    streamingThis
+                                                        ? undefined
+                                                        : onHitl
+                                                }
+                                            />
                                         </article>
                                     )}
                                 </li>
@@ -235,12 +176,13 @@ export default function ChatView() {
                             }
                         }}
                         placeholder="What is human emotion?"
-                        className="min-h-[3.2rem] flex-1 resize-none rounded-sm border border-(--rule) bg-paper-deep/50 px-4 py-3 outline-none ring-sienna/40 placeholder:text-ink-soft/70 focus:ring-2 scrollbar-thin scrollbar-thumb-gray-400"
+                        disabled={busy}
+                        className="min-h-[3.2rem] flex-1 resize-none rounded-sm border border-(--rule) bg-paper-deep/50 px-4 py-3 outline-none ring-sienna/40 placeholder:text-ink-soft/70 focus:ring-2 disabled:opacity-60"
                     />
-                    {status === 'streaming' ? (
+                    {busy ? (
                         <button
                             type="button"
-                            onClick={stop}
+                            onClick={() => stop()}
                             className="h-12 rounded-sm border border-ink px-4 font-mono text-xs tracking-[0.18em] uppercase"
                         >
                             Stop
@@ -260,7 +202,7 @@ export default function ChatView() {
                         className="mx-auto mt-2 max-w-3xl font-mono text-xs text-sienna"
                         role="alert"
                     >
-                        {error}
+                        {error.message}
                     </p>
                 ) : null}
             </form>

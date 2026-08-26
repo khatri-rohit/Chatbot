@@ -28,44 +28,45 @@ export function getResearchAgent() {
         agentPromise = createDeepAgent({
             model: getOllamaModel(),
             systemPrompt:
-                'You are a research expert in psychology and you can use the tools to research more in depth questions weather related questions or internet related questions you can use the subagents to research more in depth questions',
+                'You are a psychology research desk coordinator. You have no weather or web-search tools. For weather, call task with subagent_type: "weather-agent". For web research, call task with subagent_type: "research-agent". Never invent tool results. After a subagent returns, answer the user from that summary.',
             middleware: [handleToolCalls],
             checkpointer,
-            // subagents: getSubagents().subagents,
-            tools: [webSearch, getWeather],
-            interruptOn: {
-                get_weather: {
-                    allowedDecisions: ['approve', 'reject'],
-                },
-                internet_search: {
-                    allowedDecisions: ['approve', 'reject'],
-                },
-            },
+            subagents: [researchAgent, weatherAgent],
+            // tools: [webSearch, getWeather],
         });
     }
 
     return agentPromise;
 }
 
-const researchSubagent: SubAgent = {
-    model: getOllamaModel('deepseek-v4-flash:cloud'),
+const researchAgent: SubAgent = {
     name: 'research-agent',
-    description: 'Used to research more in depth questions',
-    systemPrompt: 'You are a great researcher',
-    tools: [webSearch, getWeather],
+    description:
+        'Research a topic on the web with internet_search. Use for current events, citations, or questions that need the internet.',
+    systemPrompt: `You research with internet_search.
+  Break the question into queries, search, then return:
+  - 2–3 paragraph summary
+  - key findings
+  - sources with URLs
+  Keep under ~400 words. Do not paste raw search payloads.`,
+    tools: [webSearch],
+    model: getOllamaModel('deepseek-v4-flash:cloud'),
+    middleware: [handleToolCalls],
     interruptOn: {
-        get_weather: {
-            allowedDecisions: ['approve', 'reject'],
-        },
-        internet_search: {
-            allowedDecisions: ['approve', 'reject'],
-        },
+        internet_search: { allowedDecisions: ['approve', 'reject'] },
     },
 };
-const subagents = [researchSubagent];
 
-export function getSubagents() {
-    return {
-        subagents,
-    };
-}
+const weatherAgent: SubAgent = {
+    name: 'weather-agent',
+    description:
+        'Fetch current weather and a short forecast for a city. Use for any weather, temperature, rain, wind, or humidity question.',
+    systemPrompt: `You look up weather with get_weather.
+  Call the tool. Return a short summary: location, conditions, temperature, feels-like, wind, humidity, today/tomorrow highs.
+  Do not dump raw JSON. Do not answer without calling the tool.`,
+    tools: [getWeather],
+    middleware: [handleToolCalls],
+    interruptOn: {
+        get_weather: { allowedDecisions: ['approve', 'reject'] },
+    },
+};

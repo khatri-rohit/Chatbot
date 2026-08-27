@@ -1,4 +1,4 @@
-import { ToolMessage, createMiddleware } from 'langchain';
+import { AIMessage, ToolMessage, createMiddleware } from 'langchain';
 import { isGraphBubbleUp, isGraphInterrupt } from '@langchain/langgraph';
 
 /**
@@ -11,6 +11,20 @@ import { isGraphBubbleUp, isGraphInterrupt } from '@langchain/langgraph';
 
 export const handleToolCalls = createMiddleware({
     name: 'HandleToolCalls',
+    // wrapModelCall: async (request, handler) => {
+    //     const result = await handler(request);
+    //     const message = result;
+    //     console.log('message wrapModelCall', message);
+    //     if (!AIMessage.isInstance(message)) {
+    //         return result;
+    //     }
+
+    //     const calls = message.tool_calls ?? [];
+    //     if (calls.length <= 1) return result;
+
+    //     message.tool_calls = [calls[0]];
+    //     return result;
+    // },
     wrapToolCall: async (request, handler) => {
         if (!request.toolCall.id) {
             request.toolCall.id = crypto.randomUUID();

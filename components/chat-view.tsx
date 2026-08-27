@@ -9,6 +9,8 @@
  *   messages[].parts       →  MessageParts (Streamdown + tools + HITL)
  *   Approve/Deny           →  regenerate() with resume.decisions
  *                            →  LangGraph Command on the same thread id
+ *   Pin → Web search       →  POST webSearchEnabled; route auto-approves
+ *                            internet_search interrupts on the LangGraph thread
  */
 import { MessageParts } from '@/components/message-parts';
 import EmptyState from '@/components/EmptyState';
@@ -30,6 +32,19 @@ function CopyIcon() {
         >
             <rect x="5.5" y="5.5" width="8" height="8" rx="1" />
             <path d="M10.5 5.5V4a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1H5.5" />
+        </svg>
+    );
+}
+
+function PinIcon() {
+    return (
+        <svg
+            viewBox="0 0 16 16"
+            fill="currentColor"
+            aria-hidden
+            className="h-4 w-4"
+        >
+            <path d="M10.2 1.15a.85.85 0 0 0-1.2.08L6.5 4.15 4.2 3.5a.85.85 0 0 0-1 .4L2.3 5.7a.85.85 0 0 0 .18 1.05l2.55 2.2-3.15 5.4a.4.4 0 0 0 .7.4l3.35-4.85 2.7 2.35a.85.85 0 0 0 1.08-.08l1.55-1.75a.85.85 0 0 0 .05-.95l-.85-2.25 3.05-2.2a.85.85 0 0 0 .1-1.18L10.2 1.15Z" />
         </svg>
     );
 }
@@ -98,12 +113,19 @@ function UserMessage({ text }: { text: string }) {
 
 const resumeHolders = new WeakMap<
     DefaultChatTransport<DeskUIMessage>,
-    { resume: { decisions: HitlDecision[] } | null }
+    {
+        resume: { decisions: HitlDecision[] } | null;
+        webSearchEnabled: boolean;
+    }
 >();
 
 function createDeskTransport() {
-    const holder: { resume: { decisions: HitlDecision[] } | null } = {
+    const holder: {
+        resume: { decisions: HitlDecision[] } | null;
+        webSearchEnabled: boolean;
+    } = {
         resume: null,
+        webSearchEnabled: false,
     };
     const transport = new DefaultChatTransport<DeskUIMessage>({
         api: '/api/chat',
@@ -112,6 +134,7 @@ function createDeskTransport() {
                 id,
                 messages,
                 resume: holder.resume ?? undefined,
+                webSearchEnabled: holder.webSearchEnabled || undefined,
             },
         }),
     });
@@ -127,9 +150,20 @@ function setTransportResume(
     if (holder) holder.resume = resume;
 }
 
+function setTransportWebSearch(
+    transport: DefaultChatTransport<DeskUIMessage>,
+    enabled: boolean,
+) {
+    const holder = resumeHolders.get(transport);
+    if (holder) holder.webSearchEnabled = enabled;
+}
+
 export default function ChatView() {
     const [draft, setDraft] = useState('');
+    const [webSearchEnabled, setWebSearchEnabled] = useState(false);
+    const [pinOpen, setPinOpen] = useState(false);
     const endRef = useRef<HTMLDivElement>(null);
+    const pinRef = useRef<HTMLDivElement>(null);
     const [transport] = useState(createDeskTransport);
 
     const { messages, sendMessage, regenerate, status, stop, error } =
@@ -137,9 +171,34 @@ export default function ChatView() {
             transport,
         });
 
+    const onHitl = (decision: HitlDecision, pendingCount: number) => {
+        const n = Math.max(1, pendingCount);
+        setTransportResume(transport, {
+            decisions: Array.from({ length: n }, () => decision),
+        });
+        void regenerate().finally(() => setTransportResume(transport, null));
+    };
+
+    useEffect(() => {
+        setTransportWebSearch(transport, webSearchEnabled);
+    }, [transport, webSearchEnabled]);
+
     useEffect(() => {
         endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }, [messages, status]);
+
+    useEffect(() => {
+        if (!pinOpen) return;
+
+        const onPointerDown = (event: PointerEvent) => {
+            if (!pinRef.current?.contains(event.target as Node)) {
+                setPinOpen(false);
+            }
+        };
+
+        document.addEventListener('pointerdown', onPointerDown);
+        return () => document.removeEventListener('pointerdown', onPointerDown);
+    }, [pinOpen]);
 
     const onSubmit = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
@@ -148,13 +207,6 @@ export default function ChatView() {
         setTransportResume(transport, null);
         setDraft('');
         void sendMessage({ text: query });
-    };
-
-    const onHitl = (decision: HitlDecision) => {
-        setTransportResume(transport, { decisions: [decision] });
-        void regenerate().finally(() => {
-            setTransportResume(transport, null);
-        });
     };
 
     const busy = status === 'submitted' || status === 'streaming';
@@ -235,6 +287,49 @@ export default function ChatView() {
                 className="fixed inset-x-0 bottom-0 border-t border-(--rule) bg-[color-mix(in_srgb,var(--paper)_88%,transparent)] px-4 py-4 backdrop-blur-md"
             >
                 <div className="mx-auto flex w-full max-w-3xl items-end gap-3">
+                    <div ref={pinRef} className="relative shrink-0">
+                        <button
+                            type="button"
+                            aria-label="Tools"
+                            aria-expanded={pinOpen}
+                            aria-pressed={webSearchEnabled}
+                            onClick={() => setPinOpen((open) => !open)}
+                            className={`flex h-12 w-12 items-center justify-center rounded-sm border transition-colors focus-visible:ring-2 focus-visible:ring-sienna/50 focus-visible:outline-none ${
+                                webSearchEnabled
+                                    ? 'border-sage bg-sage text-paper'
+                                    : 'border-(--rule) text-ink-soft hover:border-ink hover:text-ink'
+                            }`}
+                        >
+                            <PinIcon />
+                        </button>
+                        {pinOpen ? (
+                            <div
+                                role="menu"
+                                className="absolute bottom-[calc(100%+8px)] left-0 z-20 w-56 border border-(--rule) bg-paper px-1 py-1 shadow-[0_-8px_24px_rgba(36,24,15,0.08)]"
+                            >
+                                <button
+                                    type="button"
+                                    role="menuitemcheckbox"
+                                    aria-checked={webSearchEnabled}
+                                    onClick={() =>
+                                        setWebSearchEnabled((on) => !on)
+                                    }
+                                    className="flex w-full items-center justify-between px-3 py-2.5 text-left font-mono text-[11px] tracking-[0.14em] uppercase hover:bg-paper-deep/70"
+                                >
+                                    Web search
+                                    <span
+                                        className={
+                                            webSearchEnabled
+                                                ? 'text-sage'
+                                                : 'text-ink-soft'
+                                        }
+                                    >
+                                        {webSearchEnabled ? 'On' : 'Off'}
+                                    </span>
+                                </button>
+                            </div>
+                        ) : null}
+                    </div>
                     <label className="sr-only" htmlFor="query">
                         Question
                     </label>
@@ -271,6 +366,11 @@ export default function ChatView() {
                         </button>
                     )}
                 </div>
+                {webSearchEnabled ? (
+                    <p className="mx-auto mt-2 max-w-3xl font-mono text-[10px] tracking-wide text-sage uppercase">
+                        Web search pinned — searches approve automatically
+                    </p>
+                ) : null}
                 {error ? (
                     <p
                         className="mx-auto mt-2 max-w-3xl font-mono text-xs text-sienna"

@@ -5,11 +5,13 @@ import { z } from 'zod';
  *
  * - `id`        → LangGraph `configurable.thread_id` (same value as useChat id)
  * - `messages`  → AI SDK UIMessage[] (converted with `toBaseMessages`)
- * - `resume`    → HITL decision after Approve/Deny; route runs `Command({ resume })`
+ * - `resume`            → HITL decision after Approve/Deny; route runs `Command({ resume })`
+ * - `webSearchEnabled`  → pin is on; route auto-approves internet_search interrupts
  */
 export const chatRequestSchema = z.object({
     id: z.string().min(1),
     messages: z.array(z.unknown()).min(1),
+    webSearchEnabled: z.boolean().optional(),
     resume: z
         .object({
             decisions: z

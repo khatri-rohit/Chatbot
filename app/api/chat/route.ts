@@ -2,20 +2,19 @@
  * POST /api/chat — AI SDK UI message stream over Deep Agents.
  *
  * Client (`useChat` + DefaultChatTransport):
- *   { id, messages, resume? }  where `id` is the chat/thread id.
+ *   { id, messages, resume?, webSearchEnabled? }
  *
- * This route:
- *   1. Validates the body (`lib/schema.ts`)
- *   2. Loads the singleton Deep Agent (`lib/ai/agent.ts`)
- *   3. UIMessage[] → LangChain messages via `toBaseMessages` (@ai-sdk/langchain)
- *      or resumes HITL with LangGraph `Command`
- *   4. `agent.stream({ streamMode: values|messages|tools|custom })`
- *   5. `toUIMessageStream` maps that to UI chunks (text, tool-*, data-progress)
- *   6. After the stream, `getState` → optional `data-hitl` part for Approve/Deny
- *   7. `createUIMessageStreamResponse` sets the UI-message SSE headers `useChat` expects
+ * HITL lives on the LangGraph thread (research-agent.internet_search),
+ * not on the chat UI. The pin is a request flag: when web search is on,
+ * this route resumes search interrupts with approve decisions in the
+ * same HTTP stream instead of asking the client to regenerate().
  */
 import { getResearchAgent } from '@/lib/ai/agent';
-import { extractHitlData } from '@/lib/ai/hitl';
+import {
+    extractHitlData,
+    isAutoApprovableWebSearch,
+    webSearchApproveDecisions,
+} from '@/lib/ai/hitl';
 import { chatRequestSchema } from '@/lib/schema';
 import type { DeskUIMessage } from '@/lib/ai/types';
 import { Command } from '@langchain/langgraph';
@@ -32,6 +31,8 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 1000;
 
+const MAX_AUTO_APPROVE_TURNS = 8;
+
 export async function POST(req: Request) {
     const parsed = chatRequestSchema.safeParse(
         await req.json().catch(() => null),
@@ -44,7 +45,7 @@ export async function POST(req: Request) {
         );
     }
 
-    const { id: threadId, resume } = parsed.data;
+    const { id: threadId, resume, webSearchEnabled } = parsed.data;
     const messages = parsed.data.messages as UIMessage[];
 
     try {
@@ -58,31 +59,43 @@ export async function POST(req: Request) {
             ? new Command({ resume: { decisions: resume.decisions } })
             : { messages: await toBaseMessages(messages) };
 
-        const langchainStream = await agent.stream(input, {
-            ...config,
-            streamMode: ['values', 'messages', 'tools', 'custom'],
-        });
-
         const stream = createUIMessageStream<DeskUIMessage>({
             execute: async ({ writer }) => {
                 writer.write({ type: 'start' });
 
-                const uiStream = toUIMessageStream(
-                    langchainStream as Parameters<typeof toUIMessageStream>[0],
-                    { sendStart: false, sendFinish: false },
+                await pipeAgentUi(agent, input, config, writer);
+
+                let hitl = extractHitlData(
+                    await agent.getState(config),
+                    threadId,
                 );
 
-                const reader = uiStream.getReader();
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    writer.write(value as InferUIMessageChunk<DeskUIMessage>);
+                for (
+                    let turn = 0;
+                    webSearchEnabled &&
+                    hitl &&
+                    isAutoApprovableWebSearch(hitl) &&
+                    turn < MAX_AUTO_APPROVE_TURNS;
+                    turn++
+                ) {
+                    await pipeAgentUi(
+                        agent,
+                        new Command({
+                            resume: {
+                                decisions: webSearchApproveDecisions(
+                                    hitl.pendingCount,
+                                ),
+                            },
+                        }),
+                        config,
+                        writer,
+                    );
+                    hitl = extractHitlData(
+                        await agent.getState(config),
+                        threadId,
+                    );
                 }
 
-                // HITL: if LangGraph paused (interruptOn), tell the UI.
-                const snapshot = await agent.getState(config);
-                // console.log(snapshot);
-                const hitl = extractHitlData(snapshot, threadId);
                 if (hitl) {
                     writer.write({
                         type: 'data-hitl',
@@ -102,5 +115,31 @@ export async function POST(req: Request) {
             { error: 'The assistant could not complete that request.' },
             { status: 500 },
         );
+    }
+}
+
+async function pipeAgentUi(
+    agent: Awaited<ReturnType<typeof getResearchAgent>>,
+    input: unknown,
+    config: { configurable: { thread_id: string }; signal: AbortSignal },
+    writer: { write: (chunk: InferUIMessageChunk<DeskUIMessage>) => void },
+) {
+    const langchainStream = await agent.stream(input, {
+        ...config,
+        streamMode: ['values', 'messages', 'tools', 'custom'],
+    });
+
+    const uiStream = toUIMessageStream(
+        langchainStream as Parameters<typeof toUIMessageStream>[0],
+        { sendStart: false, sendFinish: false },
+    );
+
+    const reader = uiStream.getReader();
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+            writer.write(value as InferUIMessageChunk<DeskUIMessage>);
+        }
     }
 }

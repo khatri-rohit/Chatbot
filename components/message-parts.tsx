@@ -30,12 +30,28 @@ export function MessageParts({
 }: {
     message: DeskUIMessage;
     isStreaming: boolean;
-    onHitl?: (decision: HitlDecision) => void;
+    onHitl?: (decision: HitlDecision, pendingCount: number) => void;
 }) {
     const text = message.parts
         .filter((part) => part.type === 'text')
-        .map((part) => part.text)
+        .map((part) => (part.type === 'text' ? part.text : ''))
         .join('');
+
+    const hitlPart = message.parts.find((part) => part.type === 'data-hitl');
+    const pendingCount = Math.max(
+        1,
+        (hitlPart?.type === 'data-hitl' ? hitlPart.data.pendingCount : 0) ||
+            message.parts.filter(
+                (part) =>
+                    isToolUIPart(part) && part.state === 'approval-requested',
+            ).length,
+    );
+
+    const resume =
+        onHitl &&
+        ((decision: HitlDecision) => {
+            onHitl(decision, pendingCount);
+        });
 
     return (
         <div className="flex flex-col gap-3">
@@ -65,7 +81,8 @@ export function MessageParts({
                             description={part.data.description}
                             actionName={part.data.actionName}
                             args={part.data.arguments}
-                            onHitl={onHitl}
+                            pendingCount={pendingCount}
+                            onHitl={resume}
                         />
                     );
                 }
@@ -82,7 +99,7 @@ export function MessageParts({
                             output={'output' in part ? part.output : undefined}
                             onHitl={
                                 part.state === 'approval-requested'
-                                    ? onHitl
+                                    ? resume
                                     : undefined
                             }
                         />
@@ -109,17 +126,20 @@ function HitlCard({
     description,
     actionName,
     args,
+    pendingCount,
     onHitl,
 }: {
     description: string;
     actionName: string;
     args: unknown;
+    pendingCount: number;
     onHitl?: (decision: HitlDecision) => void;
 }) {
     return (
         <div className="border border-(--rule) bg-paper-deep/40 px-4 py-3">
             <p className="font-mono text-[10px] tracking-[0.22em] text-sienna uppercase">
                 Needs approval · {actionName}
+                {pendingCount > 1 ? ` · ${pendingCount} calls` : ''}
             </p>
             <p className="mt-2 text-sm text-ink">{description}</p>
             {args != null ? (
@@ -131,14 +151,18 @@ function HitlCard({
                 <div className="mt-3 flex gap-2">
                     <button
                         type="button"
-                        onClick={() => onHitl({ type: 'approve' })}
+                        onClick={() =>
+                            onHitl({ type: 'approve', message: 'Approved' })
+                        }
                         className="h-9 rounded-sm bg-sage px-3 font-mono text-[10px] tracking-[0.18em] text-paper uppercase"
                     >
                         Approve
                     </button>
                     <button
                         type="button"
-                        onClick={() => onHitl({ type: 'reject' })}
+                        onClick={() =>
+                            onHitl({ type: 'reject', message: 'Denied' })
+                        }
                         className="h-9 rounded-sm border border-ink px-3 font-mono text-[10px] tracking-[0.18em] uppercase"
                     >
                         Deny
@@ -183,14 +207,18 @@ function ToolCard({
                 <div className="mt-3 flex gap-2">
                     <button
                         type="button"
-                        onClick={() => onHitl({ type: 'approve' })}
+                        onClick={() =>
+                            onHitl({ type: 'approve', message: 'Approved' })
+                        }
                         className="h-9 rounded-sm bg-sage px-3 font-mono text-[10px] tracking-[0.18em] text-paper uppercase"
                     >
                         Approve
                     </button>
                     <button
                         type="button"
-                        onClick={() => onHitl({ type: 'reject' })}
+                        onClick={() =>
+                            onHitl({ type: 'reject', message: 'Denied' })
+                        }
                         className="h-9 rounded-sm border border-ink px-3 font-mono text-[10px] tracking-[0.18em] uppercase"
                     >
                         Deny

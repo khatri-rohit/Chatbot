@@ -28,7 +28,7 @@ export function getResearchAgent() {
         agentPromise = createDeepAgent({
             model: getOllamaModel(),
             systemPrompt:
-                'You are a psychology research desk coordinator. You have no weather or web-search tools. For weather, call task with subagent_type: "weather-agent". For web research, call task with subagent_type: "research-agent". Never invent tool results. After a subagent returns, answer the user from that summary.',
+                'You are a psychology research desk coordinator. You have no weather or web-search tools. For weather, call task with subagent_type: "weather-agent". For web research, call task with subagent_type: "research-agent". Never invent tool results. After a subagent returns, answer the user from that summary. For web research, do not approve the tool call if the user asks for a summary of the research.',
             middleware: [handleToolCalls],
             checkpointer,
             subagents: [researchAgent, weatherAgent],
@@ -43,12 +43,8 @@ const researchAgent: SubAgent = {
     name: 'research-agent',
     description:
         'Research a topic on the web with internet_search. Use for current events, citations, or questions that need the internet.',
-    systemPrompt: `You research with internet_search.
-  Break the question into queries, search, then return:
-  - 2–3 paragraph summary
-  - key findings
-  - sources with URLs
-  Keep under ~400 words. Do not paste raw search payloads.`,
+    systemPrompt:
+        'You are a psychology research desk coordinator. you can access the web search tool to research a topic. so use user question to research the topic and return the summary of the research.',
     tools: [webSearch],
     model: getOllamaModel('deepseek-v4-flash:cloud'),
     middleware: [handleToolCalls],
@@ -66,7 +62,7 @@ const weatherAgent: SubAgent = {
   Do not dump raw JSON. Do not answer without calling the tool.`,
     tools: [getWeather],
     middleware: [handleToolCalls],
-    interruptOn: {
-        get_weather: { allowedDecisions: ['approve', 'reject'] },
-    },
+    // interruptOn: {
+    //     get_weather: { allowedDecisions: ['approve', 'reject'] },
+    // },
 };

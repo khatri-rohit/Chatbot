@@ -24,6 +24,8 @@ export type HitlData = {
     description: string;
     arguments: unknown;
     allowedDecisions: Array<'approve' | 'reject'>;
+    pendingCount: number;
+    actionNames: string[];
 };
 
 /** Optional live status from a LangChain tool `config.writer()`. */

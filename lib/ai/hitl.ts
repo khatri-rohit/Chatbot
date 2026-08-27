@@ -41,7 +41,11 @@ function collectInterrupts(
         if (task.interrupts?.length) {
             found.push(...task.interrupts);
         }
-        if (task.state && typeof task.state === 'object' && !('then' in task.state)) {
+        if (
+            task.state &&
+            typeof task.state === 'object' &&
+            !('then' in task.state)
+        ) {
             found.push(...collectInterrupts(task.state));
         }
     }
@@ -50,9 +54,17 @@ function collectInterrupts(
     return snapshot.values?.__interrupt__ ?? [];
 }
 
+function actionRequestsOf(interrupt: GraphInterrupt) {
+    return interrupt.value?.actionRequests ?? [];
+}
+
 /**
  * Reads a LangGraph checkpoint snapshot after the stream ends.
  * Used by `/api/chat` to emit a `data-hitl` UI part the chat view can render.
+ *
+ * Nested internet_search interrupts live on subgraph tasks. Callers must
+ * pass `getState(config, { subgraphs: true })` so `tasks[].state` is filled.
+ * pendingCount is hanging actionRequests.length across those interrupts.
  */
 export function extractHitlData(
     snapshot: GraphSnapshot | null | undefined,
@@ -62,12 +74,14 @@ export function extractHitlData(
 
     if (interrupts.length === 0) return null;
 
-    const value = interrupts[0]?.value;
-    const actions = value?.actionRequests ?? [];
-    const review = value?.reviewConfigs?.[0];
+    const actions = interrupts.flatMap(actionRequestsOf);
 
     if (actions.length === 0) return null;
 
+    const firstWithActions =
+        interrupts.find((interrupt) => actionRequestsOf(interrupt).length > 0) ??
+        interrupts[0];
+    const review = firstWithActions?.value?.reviewConfigs?.[0];
     const actionNames = actions.map((action) => action.name ?? '');
 
     return {
@@ -83,13 +97,16 @@ export function extractHitlData(
 }
 
 export function isAutoApprovableWebSearch(hitl: HitlData) {
-    const names = hitl.actionNames.length > 0 ? hitl.actionNames : [hitl.actionName];
+    const names =
+        hitl.actionNames.length > 0 ? hitl.actionNames : [hitl.actionName];
     return (
         names.length > 0 && names.every((name) => WEB_SEARCH_TOOLS.has(name))
     );
 }
 
-export function webSearchApproveDecisions(pendingCount: number): HitlDecision[] {
+export function webSearchApproveDecisions(
+    pendingCount: number,
+): HitlDecision[] {
     return Array.from({ length: Math.max(1, pendingCount) }, () => ({
         type: 'approve' as const,
         message: 'Approved',

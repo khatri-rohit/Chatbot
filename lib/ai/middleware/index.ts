@@ -1,4 +1,4 @@
-import { AIMessage, ToolMessage, createMiddleware } from 'langchain';
+import { ToolMessage, createMiddleware } from 'langchain';
 import { isGraphBubbleUp, isGraphInterrupt } from '@langchain/langgraph';
 
 /**
@@ -7,6 +7,11 @@ import { isGraphBubbleUp, isGraphInterrupt } from '@langchain/langgraph';
  * Ollama often omits `tool_call.id`. The AI SDK adapter (and ToolMessage)
  * correlate start/end by that id. We assign one here so `tool-get_weather`
  * parts in the UI can show input and output.
+ *
+ * Nested HITL (research-agent.internet_search) throws GraphInterrupt from
+ * the subgraph. That MUST bubble to `/api/chat` so extractHitlData can
+ * pause or auto-approve. Converting it into a `task` ToolMessage makes
+ * the parent retry the same research job.
  */
 
 export const handleToolCalls = createMiddleware({
@@ -18,10 +23,10 @@ export const handleToolCalls = createMiddleware({
     //     if (!AIMessage.isInstance(message)) {
     //         return result;
     //     }
-
+    //
     //     const calls = message.tool_calls ?? [];
     //     if (calls.length <= 1) return result;
-
+    //
     //     message.tool_calls = [calls[0]];
     //     return result;
     // },
@@ -33,14 +38,79 @@ export const handleToolCalls = createMiddleware({
         try {
             return await handler(request);
         } catch (error) {
-            console.error(error);
-            if (isGraphInterrupt(error) || isGraphBubbleUp(error)) {
+            if (isInterruptAdjacentError(error)) {
                 throw error;
             }
+            console.error(error);
             return new ToolMessage({
                 content: `Tool error: check the input and try again. (${error})`,
                 tool_call_id: request.toolCall.id,
+                status: 'error',
             });
         }
     },
 });
+
+function isInterruptAdjacentError(error: unknown, depth = 0): boolean {
+    if (error == null || depth > 6) return false;
+    if (isGraphInterrupt(error) || isGraphBubbleUp(error)) return true;
+
+    if (typeof error === 'object') {
+        const record = error as Record<string, unknown>;
+        const name = typeof record.name === 'string' ? record.name : '';
+        if (
+            name === 'GraphInterrupt' ||
+            name === 'NodeInterrupt' ||
+            name === 'GraphBubbleUp' ||
+            name === 'ParentCommand' ||
+            name === 'GraphDrained'
+        ) {
+            return true;
+        }
+        if (record.is_bubble_up === true) return true;
+        if (Array.isArray(record.interrupts)) return true;
+        if (
+            Array.isArray(error) &&
+            error.some(
+                (item) =>
+                    item != null &&
+                    typeof item === 'object' &&
+                    'value' in item &&
+                    item.value != null &&
+                    typeof item.value === 'object' &&
+                    'actionRequests' in (item.value as object),
+            )
+        ) {
+            return true;
+        }
+    }
+
+    const message = error instanceof Error ? error.message : String(error);
+    if (
+        /Number of human decisions/i.test(message) ||
+        /Invalid HITLResponse/i.test(message) ||
+        /Unexpected human decision/i.test(message) ||
+        /GraphInterrupt/i.test(message) ||
+        /hanging tool calls/i.test(message) ||
+        /"actionRequests"\s*:/.test(message)
+    ) {
+        return true;
+    }
+
+    if (typeof error === 'object' && error !== null) {
+        if (
+            'cause' in error &&
+            isInterruptAdjacentError(error.cause, depth + 1)
+        ) {
+            return true;
+        }
+        if (
+            'error' in error &&
+            isInterruptAdjacentError(error.error, depth + 1)
+        ) {
+            return true;
+        }
+    }
+
+    return false;
+}

@@ -11,6 +11,9 @@
  *                            →  LangGraph Command on the same thread id
  *   Pin → Web search       →  POST webSearchEnabled; route auto-approves
  *                            internet_search interrupts on the LangGraph thread
+ *
+ * `useChat({ id })` is the LangGraph `thread_id`. Without it the UI and
+ * MemorySaver drift apart after the first tool return.
  */
 import { MessageParts } from '@/components/message-parts';
 import EmptyState from '@/components/EmptyState';
@@ -165,9 +168,11 @@ export default function ChatView() {
     const endRef = useRef<HTMLDivElement>(null);
     const pinRef = useRef<HTMLDivElement>(null);
     const [transport] = useState(createDeskTransport);
+    const [chatId] = useState(() => crypto.randomUUID());
 
     const { messages, sendMessage, regenerate, status, stop, error } =
         useChat<DeskUIMessage>({
+            id: chatId,
             transport,
         });
 

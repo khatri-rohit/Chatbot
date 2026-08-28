@@ -33,6 +33,9 @@ import {
  * (beforeAgent jumpTo end) so coding/weather turns never hit the model.
  *
  * `thread_id` from `useChat({ id })` is the checkpoint key.
+ *
+ * LangSmith traces this graph when LANGSMITH_TRACING=true (see
+ * `lib/ai/tracing.ts` and POST `/api/chat`).
  */
 const checkpointer = new MemorySaver();
 

@@ -10,11 +10,23 @@
  *
  * New user turns append only the latest HumanMessage when a checkpoint
  * already exists for `id`. HITL resume is always Command({ resume }).
+ *
+ * LangSmith: each POST is one root run (`atelier-chat-turn`). LangGraph
+ * model/tool spans nest under it when LANGSMITH_TRACING=true.
  */
 import { getResearchAgent } from '@/lib/ai/agent';
 import { extractHitlData } from '@/lib/ai/hitl';
+import {
+    flushLangSmithTraces,
+    getLangchainCallbacks,
+    isLangSmithTracingEnabled,
+    langSmithProjectName,
+    langSmithRunFields,
+    runTracedChatTurn,
+    scheduleLangSmithTraceFlush,
+} from '@/lib/ai/tracing';
 import { chatRequestSchema } from '@/lib/schema';
-import type { DeskConfigurable, DeskUIMessage } from '@/lib/ai/types';
+import type { DeskConfigurable, DeskUIMessage, HitlData } from '@/lib/ai/types';
 import { Command, type StreamMode } from '@langchain/langgraph';
 import { toBaseMessages, toUIMessageStream } from '@ai-sdk/langchain';
 import {
@@ -41,6 +53,10 @@ type Agent = Awaited<ReturnType<typeof getResearchAgent>>;
 type ThreadConfig = {
     configurable: DeskConfigurable;
     signal: AbortSignal;
+    runName?: string;
+    tags?: string[];
+    metadata?: Record<string, unknown>;
+    callbacks?: Awaited<ReturnType<typeof getLangchainCallbacks>>;
 };
 type UiChunk = InferUIMessageChunk<DeskUIMessage>;
 
@@ -60,13 +76,21 @@ export async function POST(req: Request) {
     const messages = parsed.data.messages as UIMessage[];
 
     try {
+        scheduleLangSmithTraceFlush();
+
         const agent = await getResearchAgent();
+        const turnMeta = {
+            threadId,
+            webSearchEnabled: Boolean(webSearchEnabled),
+            resume: Boolean(resume),
+        };
         const config: ThreadConfig = {
             configurable: {
                 thread_id: threadId,
                 webSearchEnabled: Boolean(webSearchEnabled),
             },
             signal: req.signal,
+            ...langSmithRunFields(turnMeta),
         };
 
         const input = resume
@@ -75,72 +99,58 @@ export async function POST(req: Request) {
 
         const seenTools = createToolDedupe();
 
+        if (isLangSmithTracingEnabled()) {
+            console.info('[langsmith]', {
+                project: langSmithProjectName(),
+                threadId,
+                resume: Boolean(resume),
+            });
+        }
+
         const stream = createUIMessageStream<DeskUIMessage>({
             execute: async ({ writer }) => {
-                writer.write({ type: 'start' });
+                try {
+                    writer.write({ type: 'start' });
 
-                await pipeAgentUi(
-                    agent,
-                    input,
-                    config,
-                    writer,
-                    seenTools,
-                    FIRST_PIPE_STREAM_MODE,
-                    Boolean(webSearchEnabled),
-                );
+                    const hitl = await runTracedChatTurn({
+                        ...turnMeta,
+                        execute: async (): Promise<HitlData | null> => {
+                            const callbacks = await getLangchainCallbacks();
+                            const tracedConfig: ThreadConfig = callbacks
+                                ? { ...config, callbacks }
+                                : config;
 
-                const hitl = extractHitlData(
-                    await agent.getState(config, { subgraphs: true }),
-                    threadId,
-                );
+                            await pipeAgentUi(
+                                agent,
+                                input,
+                                tracedConfig,
+                                writer,
+                                seenTools,
+                                FIRST_PIPE_STREAM_MODE,
+                                Boolean(webSearchEnabled),
+                            );
 
-                // for (
-                //     let turn = 0;
-                //     webSearchEnabled &&
-                //     hitl &&
-                //     isAutoApprovableWebSearch(hitl) &&
-                //     turn < MAX_AUTO_APPROVE_TURNS;
-                //     turn++
-                // ) {
-                //     const previous = hitl;
-                //     await pipeAgentUi(
-                //         agent,
-                //         new Command({
-                //             resume: {
-                //                 decisions: webSearchApproveDecisions(
-                //                     hitl.pendingCount,
-                //                 ),
-                //             },
-                //         }),
-                //         config,
-                //         writer,
-                //         seenTools,
-                //         RESUME_PIPE_STREAM_MODE,
-                //         Boolean(webSearchEnabled),
-                //     );
-                //     hitl = extractHitlData(
-                //         await agent.getState(config, { subgraphs: true }),
-                //         threadId,
-                //     );
-                //     if (
-                //         hitl &&
-                //         hitl.pendingCount === previous.pendingCount &&
-                //         hitl.actionNames.join('\0') ===
-                //             previous.actionNames.join('\0')
-                //     ) {
-                //         break;
-                //     }
-                // }
-
-                if (hitl) {
-                    writer.write({
-                        type: 'data-hitl',
-                        id: `hitl-${threadId}`,
-                        data: hitl,
+                            return extractHitlData(
+                                await agent.getState(config, {
+                                    subgraphs: true,
+                                }),
+                                threadId,
+                            );
+                        },
                     });
-                }
 
-                writer.write({ type: 'finish' });
+                    if (hitl) {
+                        writer.write({
+                            type: 'data-hitl',
+                            id: `hitl-${threadId}`,
+                            data: hitl,
+                        });
+                    }
+
+                    writer.write({ type: 'finish' });
+                } finally {
+                    await flushLangSmithTraces();
+                }
             },
         });
 

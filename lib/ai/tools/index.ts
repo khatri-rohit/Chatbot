@@ -1,34 +1,81 @@
 import { type ToolRuntime, tool } from 'langchain';
-import { interrupt } from '@langchain/langgraph';
 import { z } from 'zod';
 import { firecrawlSearch } from './firecrawl';
 
+/**
+ * Live web search (Firecrawl). Results stay on the calling agent's
+ * message list — register this on the parent so follow-ups still see hits.
+ *
+ * The Web search pin is `configurable.webSearchEnabled`. Off → structured
+ * error, not a throw, so the model can answer from memory instead of crashing.
+ */
 export const webSearch = tool(
-    async (input) => {
-        const results = await firecrawlSearch(input.query as string);
-        console.log('results', results);
-        return results;
+    async (input, config: ToolRuntime) => {
+        const query = input.query.trim();
+        const writer = config.writer;
+
+        if (!isWebSearchEnabled(config)) {
+            return {
+                query,
+                results: [],
+                error: 'Web search is off. Enable the Web search pin, or answer from what you already know in this thread. Do not invent URLs.',
+            };
+        }
+
+        writer?.({
+            type: 'progress',
+            id: `search-${query.slice(0, 48)}`,
+            message: input.scrape
+                ? `Searching and reading pages for “${query}”`
+                : `Searching the web for “${query}”`,
+            step: 'search',
+        });
+
+        const output = await firecrawlSearch(query, { scrape: input.scrape });
+
+        writer?.({
+            type: 'progress',
+            id: `search-${query.slice(0, 48)}`,
+            message: output.error
+                ? 'Search finished with no usable results'
+                : `Found ${output.results.length} result${output.results.length === 1 ? '' : 's'}`,
+            step: 'done',
+        });
+
+        return output;
     },
     {
         name: 'internet_search',
-        description: 'Run a web search',
+        description:
+            'Search the live web. Returns { query, results: [{ title, url, snippet }] } or { error }. Write a specific query (names, dates, constraints). Cite the returned URLs. Do not invent sources. Set scrape=true only when snippets are not enough to answer.',
         schema: z.object({
-            query: z.string(),
+            query: z
+                .string()
+                .describe(
+                    'Focused search-box query. Include names, dates, and constraints.',
+                ),
+            scrape: z
+                .boolean()
+                .optional()
+                .describe(
+                    'If true, also fetch short page excerpts. Use only when titles/snippets are insufficient.',
+                ),
         }),
     },
 );
 
+function isWebSearchEnabled(config: ToolRuntime): boolean {
+    const nested = config.config?.configurable as
+        | { webSearchEnabled?: boolean }
+        | undefined;
+    const direct = (config as { configurable?: { webSearchEnabled?: boolean } })
+        .configurable;
+    return Boolean(direct?.webSearchEnabled ?? nested?.webSearchEnabled);
+}
+
 /**
- * LangChain tool registered on the Deep Agent (`lib/ai/agent.ts`).
- *
- * After HITL approve, this return value becomes a tool message. The LLM
- * sees the full object on the next turn — not only temperature — so it can
- * answer wind, humidity, conditions, etc. Keep this JSON-serializable and
- * compact (no raw hourly arrays).
- *
- * `config.writer()` is LangGraph `streamMode: 'custom'`. The adapter
- * maps `{ type: 'progress', ... }` to a `data-progress` part on the
- * assistant message.
+ * LangChain weather tool. Compact JSON stays on the parent message list
+ * so follow-ups ("humidity?") can use it without calling the tool again.
  */
 export const getWeather = tool(
     async (input, config: ToolRuntime) => {

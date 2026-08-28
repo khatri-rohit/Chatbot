@@ -8,7 +8,7 @@ export function getOllamaModel(modelName = 'gemma4:cloud') {
         headers: {
             Authorization: `Bearer ${process.env.OLLAMA_API_KEY}`,
         },
-        repeatPenalty: 3,
+        repeatPenalty: 1.1,
         temperature: 0.3,
         keepAlive: '25m',
         // seed: 2

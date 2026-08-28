@@ -4,10 +4,9 @@
  * Client (`useChat` + DefaultChatTransport):
  *   { id, messages, resume?, webSearchEnabled? }
  *
- * HITL lives on the LangGraph thread (research-agent.internet_search),
- * not on the chat UI. The pin is a request flag: when web search is on,
- * this route resumes search interrupts with approve decisions in the
- * same HTTP stream instead of asking the client to regenerate().
+ * `webSearchEnabled` is copied onto LangGraph `configurable` so
+ * `internet_search` can run or return a structured "pin off" error.
+ * HITL auto-approve remains as a safety net if a nested interrupt appears.
  *
  * New user turns append only the latest HumanMessage when a checkpoint
  * already exists for `id`. HITL resume is always Command({ resume }).
@@ -19,7 +18,7 @@ import {
     webSearchApproveDecisions,
 } from '@/lib/ai/hitl';
 import { chatRequestSchema } from '@/lib/schema';
-import type { DeskUIMessage } from '@/lib/ai/types';
+import type { DeskConfigurable, DeskUIMessage } from '@/lib/ai/types';
 import { Command, type StreamMode } from '@langchain/langgraph';
 import { toBaseMessages, toUIMessageStream } from '@ai-sdk/langchain';
 import {
@@ -41,7 +40,7 @@ const RESUME_PIPE_STREAM_MODE = ['messages', 'tools', 'custom'] as const;
 
 type Agent = Awaited<ReturnType<typeof getResearchAgent>>;
 type ThreadConfig = {
-    configurable: { thread_id: string };
+    configurable: DeskConfigurable;
     signal: AbortSignal;
 };
 type UiChunk = InferUIMessageChunk<DeskUIMessage>;
@@ -64,13 +63,16 @@ export async function POST(req: Request) {
     try {
         const agent = await getResearchAgent();
         const config: ThreadConfig = {
-            configurable: { thread_id: threadId },
+            configurable: {
+                thread_id: threadId,
+                webSearchEnabled: Boolean(webSearchEnabled),
+            },
             signal: req.signal,
         };
 
         const input = resume
             ? new Command({ resume: { decisions: resume.decisions } })
-            : await humanTurnInput(agent, config, messages);
+            : await humanTurnInput(agent, config, messages, threadId);
 
         const seenTools = createToolDedupe();
 
@@ -157,6 +159,7 @@ async function humanTurnInput(
     agent: Agent,
     config: ThreadConfig,
     messages: UIMessage[],
+    threadId: string,
 ) {
     const snapshot = await agent.getState(config, { subgraphs: true });
     const checkpointMessages = (
@@ -164,6 +167,15 @@ async function humanTurnInput(
     )?.values?.messages;
     const hasCheckpoint =
         Array.isArray(checkpointMessages) && checkpointMessages.length > 0;
+
+    console.info('[chat]', {
+        threadId,
+        webSearchEnabled: Boolean(config.configurable.webSearchEnabled),
+        checkpointMessages: Array.isArray(checkpointMessages)
+            ? checkpointMessages.length
+            : 0,
+        input: hasCheckpoint ? 'append-last-user' : 'full-history',
+    });
 
     if (!hasCheckpoint) {
         return { messages: await toBaseMessages(messages) };

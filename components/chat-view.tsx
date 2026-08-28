@@ -9,11 +9,11 @@
  *   messages[].parts       →  MessageParts (Streamdown + tools + HITL)
  *   Approve/Deny           →  regenerate() with resume.decisions
  *                            →  LangGraph Command on the same thread id
- *   Pin → Web search       →  POST webSearchEnabled; route auto-approves
- *                            internet_search interrupts on the LangGraph thread
+ *   Pin → Web search       → POST webSearchEnabled; internet_search may
+ *                            call Firecrawl (off → structured error)
  *
- * `useChat({ id })` is the LangGraph `thread_id`. Without it the UI and
- * MemorySaver drift apart after the first tool return.
+ * `useChat({ id })` is the LangGraph `thread_id`. Stored in sessionStorage
+ * so a refresh keeps the same checkpoint.
  */
 import { MessageParts } from '@/components/message-parts';
 import EmptyState from '@/components/EmptyState';
@@ -137,7 +137,7 @@ function createDeskTransport() {
                 id,
                 messages,
                 resume: holder.resume ?? undefined,
-                webSearchEnabled: holder.webSearchEnabled || undefined,
+                webSearchEnabled: holder.webSearchEnabled,
             },
         }),
     });
@@ -161,18 +161,97 @@ function setTransportWebSearch(
     if (holder) holder.webSearchEnabled = enabled;
 }
 
+const THREAD_STORAGE_KEY = 'atelier-thread';
+
+type StoredThread = {
+    id: string;
+    messages: DeskUIMessage[];
+    webSearchEnabled: boolean;
+};
+
+function loadStoredThread(): StoredThread {
+    try {
+        const raw = sessionStorage.getItem(THREAD_STORAGE_KEY);
+        if (!raw) {
+            return {
+                id: crypto.randomUUID(),
+                messages: [],
+                webSearchEnabled: false,
+            };
+        }
+        const parsed = JSON.parse(raw) as Partial<StoredThread>;
+        if (typeof parsed.id !== 'string' || parsed.id.length < 8) {
+            return {
+                id: crypto.randomUUID(),
+                messages: [],
+                webSearchEnabled: false,
+            };
+        }
+        return {
+            id: parsed.id,
+            messages: Array.isArray(parsed.messages) ? parsed.messages : [],
+            webSearchEnabled: Boolean(parsed.webSearchEnabled),
+        };
+    } catch {
+        return {
+            id: crypto.randomUUID(),
+            messages: [],
+            webSearchEnabled: false,
+        };
+    }
+}
+
+function saveStoredThread(thread: StoredThread) {
+    try {
+        sessionStorage.setItem(THREAD_STORAGE_KEY, JSON.stringify(thread));
+    } catch {
+        /* quota / private mode */
+    }
+}
+
 export default function ChatView() {
+    const [thread, setThread] = useState<StoredThread | null>(null);
+
+    useEffect(() => {
+        setThread(loadStoredThread());
+    }, []);
+
+    if (!thread) {
+        return (
+            <main className="relative flex min-h-dvh flex-col">
+                <header className="mx-auto flex w-full max-w-3xl items-end justify-between px-6 pt-10 pb-6">
+                    <div>
+                        <p className="font-mono text-[11px] tracking-[0.28em] text-sienna uppercase">
+                            Research desk
+                        </p>
+                        <h1 className="mt-2 font-display text-4xl tracking-tight text-ink md:text-5xl">
+                            Atelier
+                        </h1>
+                    </div>
+                </header>
+            </main>
+        );
+    }
+
+    return <ChatSession key={thread.id} initial={thread} />;
+}
+
+function ChatSession({ initial }: { initial: StoredThread }) {
     const [draft, setDraft] = useState('');
-    const [webSearchEnabled, setWebSearchEnabled] = useState(false);
+    const [webSearchEnabled, setWebSearchEnabled] = useState(
+        initial.webSearchEnabled,
+    );
     const [pinOpen, setPinOpen] = useState(false);
     const endRef = useRef<HTMLDivElement>(null);
     const pinRef = useRef<HTMLDivElement>(null);
     const [transport] = useState(createDeskTransport);
-    const [chatId] = useState(() => crypto.randomUUID());
+    const chatId = initial.id;
+    setTransportWebSearch(transport, webSearchEnabled);
 
     const { messages, sendMessage, regenerate, status, stop, error } =
         useChat<DeskUIMessage>({
             id: chatId,
+            messages: initial.messages,
             transport,
         });
 
@@ -187,6 +266,14 @@ export default function ChatView() {
     useEffect(() => {
         setTransportWebSearch(transport, webSearchEnabled);
     }, [transport, webSearchEnabled]);
+
+    useEffect(() => {
+        saveStoredThread({
+            id: chatId,
+            messages,
+            webSearchEnabled,
+        });
+    }, [chatId, messages, webSearchEnabled]);
 
     useEffect(() => {
         endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -231,8 +318,9 @@ export default function ChatView() {
                         Atelier
                     </h1>
                     <p className="mt-2 max-w-md text-[15px] text-ink-soft">
-                        UI messages stream from the Deep Agent. Markdown is
-                        typeset live; tools and approvals show as cards.
+                        UI messages stream from the desk. Weather and web
+                        search stay in this thread so follow-ups remember
+                        what was just found.
                     </p>
                 </div>
                 <span className="hidden font-mono text-[11px] tracking-widest text-sage uppercase sm:block">
@@ -373,7 +461,7 @@ export default function ChatView() {
                 </div>
                 {webSearchEnabled ? (
                     <p className="mx-auto mt-2 max-w-3xl font-mono text-[10px] tracking-wide text-sage uppercase">
-                        Web search pinned — searches approve automatically
+                        Web search pinned — the desk may look up the live web
                     </p>
                 ) : null}
                 {error ? (

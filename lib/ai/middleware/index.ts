@@ -8,10 +8,9 @@ import { isGraphBubbleUp, isGraphInterrupt } from '@langchain/langgraph';
  * correlate start/end by that id. We assign one here so `tool-get_weather`
  * parts in the UI can show input and output.
  *
- * Nested HITL (research-agent.internet_search) throws GraphInterrupt from
- * the subgraph. That MUST bubble to `/api/chat` so extractHitlData can
- * pause or auto-approve. Converting it into a `task` ToolMessage makes
- * the parent retry the same research job.
+ * Nested HITL (if a subgraph still interrupts) throws GraphInterrupt.
+ * That MUST bubble to `/api/chat`. Converting it into a `task` ToolMessage
+ * makes the parent retry the same research job.
  */
 
 export const handleToolCalls = createMiddleware({

@@ -243,7 +243,7 @@ function ToolCard({
         typeof errorText === 'string' &&
         /"actionRequests"\s*:/.test(errorText);
     const inFlight =
-        name === 'task' &&
+        (name === 'task' || name === 'internet_search' || name === 'get_weather') &&
         ((!state.includes('output') && state !== 'approval-requested') ||
             interruptPause);
     const summary = failed
@@ -254,23 +254,36 @@ function ToolCard({
           : output != null
             ? JSON.stringify(output)
             : '';
+    const searchHits = asSearchHits(output);
+    const inFlightLabel =
+        name === 'internet_search'
+            ? 'Searching…'
+            : name === 'get_weather'
+              ? 'Fetching weather…'
+              : 'Researching…';
 
     return (
         <div className="border border-dashed border-(--rule) px-4 py-3 overflow-x-auto">
             <p className="font-mono text-[10px] tracking-[0.22em] text-sage uppercase">
                 {inFlight
-                    ? 'Researching…'
+                    ? inFlightLabel
                     : `Tool · ${name} · ${state}`}
             </p>
             {input != null && !inFlight ? (
                 <p className="mt-2 font-mono text-[12px] text-ink-soft">
-                    {JSON.stringify(input)}
+                    {formatToolInput(input)}
                 </p>
             ) : null}
             {failed && !interruptPause && summary ? (
-                <p className="mt-1 text-sm text-ink">{summary.slice(0, 280)}</p>
+                <p className="mt-1 text-sm text-ink">{clip(summary, 400)}</p>
             ) : output != null && state.includes('output') ? (
-                <p className="mt-1 text-sm text-ink">{summary.slice(0, 100)}</p>
+                searchHits ? (
+                    <SearchHits output={searchHits} />
+                ) : (
+                    <pre className="mt-2 max-h-56 overflow-auto font-mono text-[11px] text-ink">
+                        {clip(pretty(output), 1600)}
+                    </pre>
+                )
             ) : null}
             {onHitl ? (
                 <div className="mt-3 flex gap-2">
@@ -296,4 +309,83 @@ function ToolCard({
             ) : null}
         </div>
     );
+}
+
+type SearchHit = {
+    title?: string;
+    url?: string;
+    snippet?: string;
+};
+
+type SearchOutput = {
+    query?: string;
+    results: SearchHit[];
+    error?: string;
+};
+
+function asSearchHits(output: unknown): SearchOutput | null {
+    if (!output || typeof output !== 'object') return null;
+    const rec = output as { results?: unknown; query?: unknown; error?: unknown };
+    if (!Array.isArray(rec.results)) return null;
+    return {
+        query: typeof rec.query === 'string' ? rec.query : undefined,
+        results: rec.results.filter(
+            (item): item is SearchHit => !!item && typeof item === 'object',
+        ),
+        error: typeof rec.error === 'string' ? rec.error : undefined,
+    };
+}
+
+function SearchHits({ output }: { output: SearchOutput }) {
+    return (
+        <div className="mt-2 flex flex-col gap-2">
+            {output.error ? (
+                <p className="text-sm text-sienna">{output.error}</p>
+            ) : null}
+            {output.results.map((hit, index) => (
+                <div key={`${hit.url ?? index}`} className="text-sm text-ink">
+                    <p className="font-medium">
+                        {index + 1}. {hit.title || hit.url || 'Result'}
+                    </p>
+                    {hit.url ? (
+                        <a
+                            href={hit.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="font-mono text-[11px] text-sage break-all underline-offset-2 hover:underline"
+                        >
+                            {hit.url}
+                        </a>
+                    ) : null}
+                    {hit.snippet ? (
+                        <p className="mt-0.5 text-[13px] text-ink-soft">
+                            {hit.snippet}
+                        </p>
+                    ) : null}
+                </div>
+            ))}
+        </div>
+    );
+}
+
+function formatToolInput(input: unknown): string {
+    if (input && typeof input === 'object' && 'query' in input) {
+        const query = (input as { query?: unknown }).query;
+        if (typeof query === 'string') return query;
+    }
+    return clip(pretty(input), 240);
+}
+
+function pretty(value: unknown): string {
+    if (typeof value === 'string') return value;
+    try {
+        return JSON.stringify(value, null, 2);
+    } catch {
+        return String(value);
+    }
+}
+
+function clip(text: string, max: number): string {
+    if (text.length <= max) return text;
+    return `${text.slice(0, max)}…`;
 }

@@ -40,3 +40,9 @@ export type DeskDataParts = {
 };
 
 export type DeskUIMessage = UIMessage<never, DeskDataParts>;
+
+/** LangGraph `configurable` fields for this desk. */
+export type DeskConfigurable = {
+    thread_id: string;
+    webSearchEnabled?: boolean;
+};

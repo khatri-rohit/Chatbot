@@ -1,6 +1,7 @@
 'use client';
 
 import type { DeskUIMessage, HitlDecision } from '@/lib/ai/types';
+import { ToolTrace, type TraceItem } from '@/components/tool-trace';
 import { getToolName, isToolUIPart } from 'ai';
 import dynamic from 'next/dynamic';
 import { code } from '@streamdown/code';
@@ -16,6 +17,9 @@ import { cjk } from '@streamdown/cjk';
  *   tool-*          → LangGraph tools mode (e.g. tool-get_weather)
  *   data-progress   → LangChain `config.writer({ type: 'progress' })`
  *   data-hitl       → route saw a LangGraph interrupt; Approve calls regenerate()
+ *
+ * Consecutive tool / progress parts collapse into one `ToolTrace` dropdown
+ * so a research loop does not stack a card per call.
  *
  * Duplicate `task` retries (same toolCallId or same name+input) collapse
  * to the latest state so the desk shows one research story.
@@ -58,28 +62,18 @@ export function MessageParts({
             onHitl(decision, pendingCount);
         });
 
+    const blocks = groupTraceBlocks(parts);
+    const toolAlreadyShowsApproval = parts.some(
+        (part) => isToolUIPart(part) && part.state === 'approval-requested',
+    );
+
     return (
         <div className="flex flex-col gap-3">
-            {parts.map((part, index) => {
-                if (part.type === 'data-progress') {
-                    return (
-                        <p
-                            key={`${message.id}-progress-${index}`}
-                            className="font-mono text-[11px] tracking-wide text-ink-soft"
-                        >
-                            {part.data.message}
-                        </p>
-                    );
-                }
-
-                if (part.type === 'data-hitl') {
-                    const alreadyShown = parts.some(
-                        (candidate) =>
-                            isToolUIPart(candidate) &&
-                            candidate.state === 'approval-requested',
-                    );
-                    if (alreadyShown) return null;
-
+            {blocks.map((block, index) => {
+                if (block.kind === 'hitl') {
+                    if (toolAlreadyShowsApproval) return null;
+                    const part = block.part;
+                    if (part.type !== 'data-hitl') return null;
                     return (
                         <HitlCard
                             key={`${message.id}-hitl-${index}`}
@@ -92,27 +86,15 @@ export function MessageParts({
                     );
                 }
 
-                if (isToolUIPart(part)) {
-                    return (
-                        <ToolCard
-                            key={toolPartKey(part, index)}
-                            name={getToolName(part)}
-                            state={part.state}
-                            input={'input' in part ? part.input : undefined}
-                            output={'output' in part ? part.output : undefined}
-                            errorText={
-                                'errorText' in part ? part.errorText : undefined
-                            }
-                            onHitl={
-                                part.state === 'approval-requested'
-                                    ? resume
-                                    : undefined
-                            }
-                        />
-                    );
-                }
-
-                return null;
+                return (
+                    <ToolTrace
+                        key={`${message.id}-trace-${index}`}
+                        isStreaming={isStreaming}
+                        items={block.items.map((item) =>
+                            toTraceItem(item.part, item.index, resume),
+                        )}
+                    />
+                );
             })}
 
             {text ? (
@@ -126,6 +108,75 @@ export function MessageParts({
             ) : null}
         </div>
     );
+}
+
+type IndexedPart = {
+    part: DeskUIMessage['parts'][number];
+    index: number;
+};
+
+type TraceBlock =
+    | { kind: 'trace'; items: IndexedPart[] }
+    | { kind: 'hitl'; part: DeskUIMessage['parts'][number] };
+
+function groupTraceBlocks(parts: DeskUIMessage['parts']): TraceBlock[] {
+    const blocks: TraceBlock[] = [];
+    let run: IndexedPart[] = [];
+
+    const flush = () => {
+        if (run.length === 0) return;
+        blocks.push({ kind: 'trace', items: run });
+        run = [];
+    };
+
+    parts.forEach((part, index) => {
+        if (part.type === 'text') return;
+        if (isToolUIPart(part) || part.type === 'data-progress') {
+            run.push({ part, index });
+            return;
+        }
+        flush();
+        if (part.type === 'data-hitl') {
+            blocks.push({ kind: 'hitl', part });
+        }
+    });
+
+    flush();
+    return blocks;
+}
+
+function toTraceItem(
+    part: DeskUIMessage['parts'][number],
+    index: number,
+    resume?: (decision: HitlDecision) => void,
+): TraceItem {
+    if (part.type === 'data-progress') {
+        return {
+            key: `progress:${index}:${part.data.message}`,
+            kind: 'progress',
+            message: part.data.message,
+        };
+    }
+
+    if (!isToolUIPart(part)) {
+        return {
+            key: `other:${index}`,
+            kind: 'progress',
+            message: part.type,
+        };
+    }
+
+    return {
+        key: toolPartKey(part, index),
+        kind: 'tool',
+        name: getToolName(part),
+        state: part.state,
+        input: 'input' in part ? part.input : undefined,
+        output: 'output' in part ? part.output : undefined,
+        errorText: 'errorText' in part ? part.errorText : undefined,
+        onHitl:
+            part.state === 'approval-requested' ? resume : undefined,
+    };
 }
 
 function collapseParts(parts: DeskUIMessage['parts']): DeskUIMessage['parts'] {
@@ -220,240 +271,4 @@ function HitlCard({
             ) : null}
         </div>
     );
-}
-
-function ToolCard({
-    name,
-    state,
-    input,
-    output,
-    errorText,
-    onHitl,
-}: {
-    name: string;
-    state: string;
-    input: unknown;
-    output: unknown;
-    errorText?: string;
-    onHitl?: (decision: HitlDecision) => void;
-}) {
-    const failed = state.includes('error');
-    const interruptPause =
-        failed &&
-        typeof errorText === 'string' &&
-        /"actionRequests"\s*:/.test(errorText);
-    const inFlight =
-        (name === 'task' ||
-            name === 'internet_search' ||
-            name === 'get_weather' ||
-            name === 'firecrawl_fetch_url_tool') &&
-        ((!state.includes('output') && state !== 'approval-requested') ||
-            interruptPause);
-    const summary = failed
-        ? errorText ||
-          (typeof output === 'string' ? output : JSON.stringify(output ?? ''))
-        : typeof output === 'string'
-          ? output
-          : output != null
-            ? JSON.stringify(output)
-            : '';
-    const searchHits = asSearchHits(output);
-    const fetchedPages = asFetchedPages(output);
-    const inFlightLabel =
-        name === 'internet_search'
-            ? 'Searching…'
-            : name === 'get_weather'
-              ? 'Fetching weather…'
-              : name === 'firecrawl_fetch_url_tool'
-                ? 'Reading pages…'
-                : 'Researching…';
-
-    return (
-        <div className="border border-dashed border-(--rule) px-4 py-3 overflow-x-auto">
-            <p className="font-mono text-[10px] tracking-[0.22em] text-sage uppercase">
-                {inFlight
-                    ? inFlightLabel
-                    : `Tool · ${name} · ${state}`}
-            </p>
-            {input != null && !inFlight ? (
-                <p className="mt-2 font-mono text-[12px] text-ink-soft">
-                    {formatToolInput(input)}
-                </p>
-            ) : null}
-            {failed && !interruptPause && summary ? (
-                <p className="mt-1 text-sm text-ink">{clip(summary, 400)}</p>
-            ) : output != null && state.includes('output') ? (
-                searchHits ? (
-                    <SearchHits output={searchHits} />
-                ) : fetchedPages ? (
-                    <FetchedPages output={fetchedPages} />
-                ) : (
-                    <pre className="mt-2 max-h-56 overflow-auto font-mono text-[11px] text-ink">
-                        {clip(pretty(output), 1600)}
-                    </pre>
-                )
-            ) : null}
-            {onHitl ? (
-                <div className="mt-3 flex gap-2">
-                    <button
-                        type="button"
-                        onClick={() =>
-                            onHitl({ type: 'approve', message: 'Approved' })
-                        }
-                        className="h-9 rounded-sm bg-sage px-3 font-mono text-[10px] tracking-[0.18em] text-paper uppercase"
-                    >
-                        Approve
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() =>
-                            onHitl({ type: 'reject', message: 'Denied' })
-                        }
-                        className="h-9 rounded-sm border border-ink px-3 font-mono text-[10px] tracking-[0.18em] uppercase"
-                    >
-                        Deny
-                    </button>
-                </div>
-            ) : null}
-        </div>
-    );
-}
-
-type SearchHit = {
-    title?: string;
-    url?: string;
-    snippet?: string;
-};
-
-type SearchOutput = {
-    query?: string;
-    results: SearchHit[];
-    error?: string;
-};
-
-function asFetchedPages(output: unknown): FetchOutput | null {
-    if (!output || typeof output !== 'object') return null;
-    const rec = output as { pages?: unknown; error?: unknown };
-    if (!Array.isArray(rec.pages)) return null;
-    return {
-        pages: rec.pages.filter(
-            (item): item is FetchedPage => !!item && typeof item === 'object',
-        ),
-        error: typeof rec.error === 'string' ? rec.error : undefined,
-    };
-}
-
-type FetchedPage = {
-    url?: string;
-    title?: string;
-    markdown?: string;
-    error?: string;
-};
-
-type FetchOutput = {
-    pages: FetchedPage[];
-    error?: string;
-};
-
-function FetchedPages({ output }: { output: FetchOutput }) {
-    return (
-        <div className="mt-2 flex flex-col gap-3">
-            {output.error ? (
-                <p className="text-sm text-sienna">{output.error}</p>
-            ) : null}
-            {output.pages.map((page, index) => (
-                <div key={`${page.url ?? index}`} className="text-sm text-ink">
-                    <p className="font-medium">
-                        {index + 1}. {page.title || page.url || 'Page'}
-                    </p>
-                    {page.url ? (
-                        <a
-                            href={page.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="font-mono text-[11px] text-sage break-all underline-offset-2 hover:underline"
-                        >
-                            {page.url}
-                        </a>
-                    ) : null}
-                    {page.error ? (
-                        <p className="mt-0.5 text-[13px] text-sienna">
-                            {page.error}
-                        </p>
-                    ) : page.markdown ? (
-                        <p className="mt-0.5 text-[13px] text-ink-soft">
-                            {clip(page.markdown, 400)}
-                        </p>
-                    ) : null}
-                </div>
-            ))}
-        </div>
-    );
-}
-
-function asSearchHits(output: unknown): SearchOutput | null {
-    if (!output || typeof output !== 'object') return null;
-    const rec = output as { results?: unknown; query?: unknown; error?: unknown };
-    if (!Array.isArray(rec.results)) return null;
-    return {
-        query: typeof rec.query === 'string' ? rec.query : undefined,
-        results: rec.results.filter(
-            (item): item is SearchHit => !!item && typeof item === 'object',
-        ),
-        error: typeof rec.error === 'string' ? rec.error : undefined,
-    };
-}
-
-function SearchHits({ output }: { output: SearchOutput }) {
-    return (
-        <div className="mt-2 flex flex-col gap-2">
-            {output.error ? (
-                <p className="text-sm text-sienna">{output.error}</p>
-            ) : null}
-            {output.results.map((hit, index) => (
-                <div key={`${hit.url ?? index}`} className="text-sm text-ink">
-                    <p className="font-medium">
-                        {index + 1}. {hit.title || hit.url || 'Result'}
-                    </p>
-                    {hit.url ? (
-                        <a
-                            href={hit.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="font-mono text-[11px] text-sage break-all underline-offset-2 hover:underline"
-                        >
-                            {hit.url}
-                        </a>
-                    ) : null}
-                    {hit.snippet ? (
-                        <p className="mt-0.5 text-[13px] text-ink-soft">
-                            {hit.snippet}
-                        </p>
-                    ) : null}
-                </div>
-            ))}
-        </div>
-    );
-}
-
-function formatToolInput(input: unknown): string {
-    if (input && typeof input === 'object' && 'query' in input) {
-        const query = (input as { query?: unknown }).query;
-        if (typeof query === 'string') return query;
-    }
-    return clip(pretty(input), 240);
-}
-
-function pretty(value: unknown): string {
-    if (typeof value === 'string') return value;
-    try {
-        return JSON.stringify(value, null, 2);
-    } catch {
-        return String(value);
-    }
-}
-
-function clip(text: string, max: number): string {
-    if (text.length <= max) return text;
-    return `${text.slice(0, max)}…`;
 }

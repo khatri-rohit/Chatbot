@@ -229,6 +229,11 @@ export default function ChatView() {
                         <h1 className="mt-2 font-display text-4xl tracking-tight text-ink md:text-5xl">
                             Atelier
                         </h1>
+                        <p className="mt-2 max-w-md text-[15px] text-ink-soft">
+                            A streaming research assistant for psychology.
+                            Weather and web search stay in this thread so
+                            follow-ups remember what was just found.
+                        </p>
                     </div>
                 </header>
             </main>

@@ -243,7 +243,10 @@ function ToolCard({
         typeof errorText === 'string' &&
         /"actionRequests"\s*:/.test(errorText);
     const inFlight =
-        (name === 'task' || name === 'internet_search' || name === 'get_weather') &&
+        (name === 'task' ||
+            name === 'internet_search' ||
+            name === 'get_weather' ||
+            name === 'firecrawl_fetch_url_tool') &&
         ((!state.includes('output') && state !== 'approval-requested') ||
             interruptPause);
     const summary = failed
@@ -255,12 +258,15 @@ function ToolCard({
             ? JSON.stringify(output)
             : '';
     const searchHits = asSearchHits(output);
+    const fetchedPages = asFetchedPages(output);
     const inFlightLabel =
         name === 'internet_search'
             ? 'Searching…'
             : name === 'get_weather'
               ? 'Fetching weather…'
-              : 'Researching…';
+              : name === 'firecrawl_fetch_url_tool'
+                ? 'Reading pages…'
+                : 'Researching…';
 
     return (
         <div className="border border-dashed border-(--rule) px-4 py-3 overflow-x-auto">
@@ -279,6 +285,8 @@ function ToolCard({
             ) : output != null && state.includes('output') ? (
                 searchHits ? (
                     <SearchHits output={searchHits} />
+                ) : fetchedPages ? (
+                    <FetchedPages output={fetchedPages} />
                 ) : (
                     <pre className="mt-2 max-h-56 overflow-auto font-mono text-[11px] text-ink">
                         {clip(pretty(output), 1600)}
@@ -322,6 +330,66 @@ type SearchOutput = {
     results: SearchHit[];
     error?: string;
 };
+
+function asFetchedPages(output: unknown): FetchOutput | null {
+    if (!output || typeof output !== 'object') return null;
+    const rec = output as { pages?: unknown; error?: unknown };
+    if (!Array.isArray(rec.pages)) return null;
+    return {
+        pages: rec.pages.filter(
+            (item): item is FetchedPage => !!item && typeof item === 'object',
+        ),
+        error: typeof rec.error === 'string' ? rec.error : undefined,
+    };
+}
+
+type FetchedPage = {
+    url?: string;
+    title?: string;
+    markdown?: string;
+    error?: string;
+};
+
+type FetchOutput = {
+    pages: FetchedPage[];
+    error?: string;
+};
+
+function FetchedPages({ output }: { output: FetchOutput }) {
+    return (
+        <div className="mt-2 flex flex-col gap-3">
+            {output.error ? (
+                <p className="text-sm text-sienna">{output.error}</p>
+            ) : null}
+            {output.pages.map((page, index) => (
+                <div key={`${page.url ?? index}`} className="text-sm text-ink">
+                    <p className="font-medium">
+                        {index + 1}. {page.title || page.url || 'Page'}
+                    </p>
+                    {page.url ? (
+                        <a
+                            href={page.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="font-mono text-[11px] text-sage break-all underline-offset-2 hover:underline"
+                        >
+                            {page.url}
+                        </a>
+                    ) : null}
+                    {page.error ? (
+                        <p className="mt-0.5 text-[13px] text-sienna">
+                            {page.error}
+                        </p>
+                    ) : page.markdown ? (
+                        <p className="mt-0.5 text-[13px] text-ink-soft">
+                            {clip(page.markdown, 400)}
+                        </p>
+                    ) : null}
+                </div>
+            ))}
+        </div>
+    );
+}
 
 function asSearchHits(output: unknown): SearchOutput | null {
     if (!output || typeof output !== 'object') return null;

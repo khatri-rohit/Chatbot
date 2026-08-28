@@ -3,6 +3,8 @@ import { Firecrawl } from 'firecrawl';
 const SNIPPET_MAX = 280;
 const EXCERPT_MAX = 1800;
 const SEARCH_LIMIT = 5;
+const FETCH_URL_MAX = 3;
+const PAGE_MAX = 3500;
 
 const firecrawl = new Firecrawl({
     apiKey: process.env.FIRECRAWL_API_KEY ?? '',
@@ -21,31 +23,123 @@ export type WebSearchOutput = {
     error?: string;
 };
 
-export async function firecrawlFetchUrl(urls: string[]): Promise<string> {
-    const apiKey = process.env.FIRECRAWL_API_KEY?.trim();
-    if (!apiKey) {
-        throw new Error(
-            'Search is not configured. FIRECRAWL_API_KEY is missing.',
-        );
-    }
+export type FetchedPage = {
+    url: string;
+    title?: string;
+    markdown?: string;
+    error?: string;
+};
 
-    const job = await firecrawl.batchScrape(
-        urls.length > 0
-            ? urls
-            : ['https://firecrawl.dev', 'https://docs.firecrawl.dev'],
-        { options: { formats: ['markdown'] }, pollInterval: 2, timeout: 500 },
-    );
-    console.log(job.data);
-    return job.data.map((result) => result.markdown).join('\n');
-}
+export type FetchUrlOutput = {
+    pages: FetchedPage[];
+    error?: string;
+};
 
 /**
- * Firecrawl SERP → compact JSON the model can cite.
- *
- * Raw SDK objects (and full page markdown) blow small-model context and
- * make answers unpredictable. Snippets are the default; `scrape` adds a
- * short excerpt on hits that include page body.
+ * Open specific URLs (usually from a prior internet_search hit) and
+ * return clipped markdown. Empty input must not fall back to demo sites.
  */
+export async function firecrawlFetchUrl(
+    urls: string[],
+): Promise<FetchUrlOutput> {
+    const apiKey = process.env.FIRECRAWL_API_KEY?.trim();
+    if (!apiKey) {
+        return {
+            pages: [],
+            error: 'Search is not configured. FIRECRAWL_API_KEY is missing.',
+        };
+    }
+
+    const unique = [
+        ...new Set(urls.map((url) => url.trim()).filter(isHttpUrl)),
+    ];
+    const limited = unique.slice(0, FETCH_URL_MAX);
+
+    if (limited.length === 0) {
+        return {
+            pages: [],
+            error: 'No valid http(s) URLs to scrape. Use URLs from internet_search, or a URL the user pasted.',
+        };
+    }
+
+    try {
+        const job = await firecrawl.batchScrape(limited, {
+            options: { formats: ['markdown'] },
+            pollInterval: 2,
+            timeout: 120,
+        });
+
+        if (job.status === 'failed' || job.status === 'cancelled') {
+            return {
+                pages: limited.map((url) => ({
+                    url,
+                    error: `Scrape job ${job.status}.`,
+                })),
+                error: `Could not scrape those pages (job ${job.status}).`,
+            };
+        }
+
+        const byUrl = new Map<string, FetchedPage>();
+        for (const doc of job.data ?? []) {
+            const url = firstString(
+                doc.metadata?.sourceURL,
+                doc.metadata?.url,
+                doc.metadata?.ogUrl,
+            );
+            const markdown =
+                typeof doc.markdown === 'string'
+                    ? clip(doc.markdown, PAGE_MAX)
+                    : '';
+            const title = firstString(
+                doc.metadata?.title,
+                doc.metadata?.ogTitle,
+            );
+            const key = url || limited[0];
+            byUrl.set(key, {
+                url: key,
+                ...(title ? { title } : {}),
+                ...(markdown
+                    ? { markdown }
+                    : { error: 'Page had no readable markdown.' }),
+            });
+        }
+
+        const pages = limited.map((url) => {
+            const hit = byUrl.get(url);
+            return (
+                hit ?? {
+                    url,
+                    error: 'No scrape result for this URL.',
+                }
+            );
+        });
+
+        if (pages.every((page) => page.error && !page.markdown)) {
+            return {
+                pages,
+                error: 'None of those pages returned readable content.',
+            };
+        }
+
+        return { pages };
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+            pages: limited.map((url) => ({ url, error: message })),
+            error: `Scrape failed: ${message}`,
+        };
+    }
+}
+
+function isHttpUrl(value: string): boolean {
+    try {
+        const parsed = new URL(value);
+        return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    } catch {
+        return false;
+    }
+}
+
 export async function firecrawlSearch(
     query: string,
     options?: { scrape?: boolean },
@@ -60,14 +154,12 @@ export async function firecrawlSearch(
     }
 
     try {
-        console.log('query firecrawlSearch', query);
         const data = await firecrawl.search(query, {
             limit: SEARCH_LIMIT,
             ...(options?.scrape
                 ? { scrapeOptions: { formats: ['markdown' as const] } }
                 : {}),
         });
-        console.log('data firecrawlSearch', data);
         const results = (data.web ?? [])
             .map(normalizeHit)
             .filter((hit): hit is WebSearchHit => hit != null);

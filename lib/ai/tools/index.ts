@@ -13,25 +13,46 @@ export const firecrawlFetchUrlTool = tool(
     async (input, config: ToolRuntime) => {
         const urls = input.urls;
         const writer = config.writer;
-        const content = await firecrawlFetchUrl(urls);
+
+        if (!isWebSearchEnabled(config)) {
+            return {
+                pages: [],
+                error: 'Web search is off. Enable the Web search pin, or answer from snippets already in this thread. Do not invent URLs.',
+            };
+        }
 
         writer?.({
             type: 'progress',
-            id: `firecrawl-fetch-url-${urls.join(',')}`,
-            message: `Fetching content for ${urls.join(',')}`,
+            id: `fetch-${urls.slice(0, 2).join(',')}`,
+            message: `Reading ${urls.length} page${urls.length === 1 ? '' : 's'}`,
+            step: 'scrape',
+        });
+
+        const output = await firecrawlFetchUrl(urls);
+
+        writer?.({
+            type: 'progress',
+            id: `fetch-${urls.slice(0, 2).join(',')}`,
+            message: output.error
+                ? 'Could not read those pages'
+                : `Read ${output.pages.filter((page) => page.markdown).length} page${output.pages.length === 1 ? '' : 's'}`,
             step: 'done',
         });
 
-        return content;
+        return output;
     },
     {
         name: 'firecrawl_fetch_url_tool',
         description:
-            'If user gives a URL or list of URLs, scrape the content of the URLs and return the markdown. Call this tool only when the user asks for a URL or list of URLs. Do not invent URLs. Do not use this tool for general-purpose web search. Do not use this tool for general-purpose web search.',
+            'Read the live page body for specific http(s) URLs and return clipped markdown. Use URLs from a previous internet_search in this thread, or URLs the user pasted. After search, call this when snippets are not enough (quotes, methods, numbers). Do not invent URLs. Do not use this instead of internet_search. Max 3 URLs per call.',
         schema: z.object({
             urls: z
                 .array(z.string())
-                .describe('The URLs to scrape the content from.'),
+                .min(1)
+                .max(3)
+                .describe(
+                    'http(s) URLs from internet_search results in this thread, or pasted by the user.',
+                ),
         }),
     },
 );
@@ -58,7 +79,7 @@ export const webSearch = tool(
             step: 'search',
         });
 
-        const output = await firecrawlSearch(query, { scrape: true });
+        const output = await firecrawlSearch(query, { scrape: input.scrape });
 
         writer?.({
             type: 'progress',

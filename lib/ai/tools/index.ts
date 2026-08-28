@@ -1,6 +1,6 @@
 import { type ToolRuntime, tool } from 'langchain';
 import { z } from 'zod';
-import { firecrawlSearch } from './firecrawl';
+import { firecrawlFetchUrl, firecrawlSearch } from './firecrawl';
 
 /**
  * Live web search (Firecrawl). Results stay on the calling agent's
@@ -9,6 +9,33 @@ import { firecrawlSearch } from './firecrawl';
  * The Web search pin is `configurable.webSearchEnabled`. Off → structured
  * error, not a throw, so the model can answer from memory instead of crashing.
  */
+export const firecrawlFetchUrlTool = tool(
+    async (input, config: ToolRuntime) => {
+        const urls = input.urls;
+        const writer = config.writer;
+        const content = await firecrawlFetchUrl(urls);
+
+        writer?.({
+            type: 'progress',
+            id: `firecrawl-fetch-url-${urls.join(',')}`,
+            message: `Fetching content for ${urls.join(',')}`,
+            step: 'done',
+        });
+
+        return content;
+    },
+    {
+        name: 'firecrawl_fetch_url_tool',
+        description:
+            'If user gives a URL or list of URLs, scrape the content of the URLs and return the markdown. Call this tool only when the user asks for a URL or list of URLs. Do not invent URLs. Do not use this tool for general-purpose web search. Do not use this tool for general-purpose web search.',
+        schema: z.object({
+            urls: z
+                .array(z.string())
+                .describe('The URLs to scrape the content from.'),
+        }),
+    },
+);
+
 export const webSearch = tool(
     async (input, config: ToolRuntime) => {
         const query = input.query.trim();
@@ -31,7 +58,7 @@ export const webSearch = tool(
             step: 'search',
         });
 
-        const output = await firecrawlSearch(query, { scrape: input.scrape });
+        const output = await firecrawlSearch(query, { scrape: true });
 
         writer?.({
             type: 'progress',

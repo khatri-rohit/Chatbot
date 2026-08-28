@@ -1,7 +1,7 @@
 import { MemorySaver } from '@langchain/langgraph';
 import { type SubAgent, createDeepAgent } from 'deepagents';
 import { handleToolCalls } from '@/lib/ai/middleware';
-import { getWeather, webSearch } from '@/lib/ai/tools';
+import { firecrawlFetchUrlTool, getWeather, webSearch } from '@/lib/ai/tools';
 import { getOllamaModel } from '@/lib/model';
 import {
     modelCallLimitMiddleware,
@@ -30,7 +30,7 @@ let agentPromise: ReturnType<typeof createDeepAgent> | null = null;
 
 const PARENT_PROMPT = `You are a research desk coordinator. The user only sees YOUR final text.
 
-You have get_weather and internet_search on this conversation. Results stay in this thread — use them on follow-ups instead of starting over.
+You have get_weather, internet_search, and firecrawlFetchUrlTool on this conversation. Results stay in this thread — use them on follow-ups instead of starting over.
 
 Rules:
 - Weather, temperature, rain, wind, humidity, forecast → call get_weather yourself. Do not call task.
@@ -39,10 +39,15 @@ Rules:
 - After a tool returns, answer from that JSON. Do not dump raw JSON. Cite source titles and URLs from search results.
 - Follow-ups ("humidity?", "the second source?") use the latest tool JSON already in this thread. Only call a tool again if that evidence is missing.
 - Call at most one tool per step. Never invent tool results.
+- If the user asks for a URL, call firecrawlFetchUrlTool with the URL.
+- Do not use firecrawlFetchUrlTool for general-purpose web search.
+- If user gives a URL or list of URLs, call firecrawlFetchUrlTool with the URLs.
 
 task / subagents:
 - Subagents do NOT see this chat. They only see the description you pass.
 - Never call general-purpose.
+- Do not use firecrawlFetchUrlTool for general-purpose web search.
+- If user gives a URL or list of URLs, call firecrawlFetchUrlTool with the URLs.
 - Call research-agent only for multi-step research that needs several searches or a written brief. Put the FULL user question, constraints, prior findings, and URLs already known into description. Ask it to return: summary, evidence bullets, markdown source list.
 - After task returns, answer from that return value. If it is empty or "Task completed", say you lack evidence. Do not restart from zero.`;
 
@@ -51,7 +56,7 @@ export function getResearchAgent() {
         agentPromise = createDeepAgent({
             model: getOllamaModel(),
             systemPrompt: PARENT_PROMPT,
-            tools: [getWeather, webSearch],
+            tools: [getWeather, webSearch, firecrawlFetchUrlTool],
             middleware: [
                 handleToolCalls,
                 modelRetryMiddleware({ maxRetries: 3 }),
@@ -61,7 +66,11 @@ export function getResearchAgent() {
                 modelFallbackMiddleware('deepseek-v4-pro:0813-cloud'),
             ],
             checkpointer,
-            subagents: [blockedGeneralPurpose, researchAgent],
+            subagents: [
+                blockedGeneralPurpose,
+                researchAgent,
+                firecrawlFetchUrlAgent,
+            ],
         });
     }
 
@@ -98,5 +107,20 @@ LIMITATIONS: (what you could not verify)
 Do not dump raw JSON. Do not invent URLs.`,
     tools: [webSearch],
     model: getOllamaModel('deepseek-v4-flash:cloud'),
+    middleware: [handleToolCalls],
+};
+
+const firecrawlFetchUrlAgent: SubAgent = {
+    name: 'firecrawl-fetch-url-agent',
+    description:
+        'Scrape the content of a URL or list of URLs and return the markdown. Call this agent only when the user asks for a URL or list of URLs. Do not invent URLs. Do not use this agent for general-purpose web search. Do not use this agent for general-purpose web search.',
+    systemPrompt: `You are a research assistant. You scrape the content of a URL or list of URLs and return the markdown. Call this agent only when the user asks for a URL or list of URLs. Do not invent URLs. Do not use this agent for general-purpose web search. Do not use this agent for general-purpose web search.
+    Your last message MUST use this shape, then stop:
+SUMMARY: (short answer to the user's question from the scraped content)
+EVIDENCE:
+- (fact, with source title and URL)
+
+Do not dump raw JSON. Do not invent URLs.`,
+    tools: [firecrawlFetchUrlTool],
     middleware: [handleToolCalls],
 };

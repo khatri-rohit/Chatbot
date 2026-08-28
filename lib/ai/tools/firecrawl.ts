@@ -21,6 +21,24 @@ export type WebSearchOutput = {
     error?: string;
 };
 
+export async function firecrawlFetchUrl(urls: string[]): Promise<string> {
+    const apiKey = process.env.FIRECRAWL_API_KEY?.trim();
+    if (!apiKey) {
+        throw new Error(
+            'Search is not configured. FIRECRAWL_API_KEY is missing.',
+        );
+    }
+
+    const job = await firecrawl.batchScrape(
+        urls.length > 0
+            ? urls
+            : ['https://firecrawl.dev', 'https://docs.firecrawl.dev'],
+        { options: { formats: ['markdown'] }, pollInterval: 2, timeout: 500 },
+    );
+    console.log(job.data);
+    return job.data.map((result) => result.markdown).join('\n');
+}
+
 /**
  * Firecrawl SERP → compact JSON the model can cite.
  *
@@ -42,14 +60,14 @@ export async function firecrawlSearch(
     }
 
     try {
-        console.log('query', query);
+        console.log('query firecrawlSearch', query);
         const data = await firecrawl.search(query, {
             limit: SEARCH_LIMIT,
             ...(options?.scrape
                 ? { scrapeOptions: { formats: ['markdown' as const] } }
                 : {}),
         });
-        console.log(data);
+        console.log('data firecrawlSearch', data);
         const results = (data.web ?? [])
             .map(normalizeHit)
             .filter((hit): hit is WebSearchHit => hit != null);

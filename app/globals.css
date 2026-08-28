@@ -34,6 +34,8 @@ body {
     background: var(--paper);
     color: var(--ink);
     font-family: var(--font-serif), 'Times New Roman', serif;
+    scrollbar-width: thin;
+    scrollbar-color: var(--ink) var(--paper);
 }
 
 body {

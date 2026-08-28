@@ -12,11 +12,7 @@
  * already exists for `id`. HITL resume is always Command({ resume }).
  */
 import { getResearchAgent } from '@/lib/ai/agent';
-import {
-    extractHitlData,
-    isAutoApprovableWebSearch,
-    webSearchApproveDecisions,
-} from '@/lib/ai/hitl';
+import { extractHitlData } from '@/lib/ai/hitl';
 import { chatRequestSchema } from '@/lib/schema';
 import type { DeskConfigurable, DeskUIMessage } from '@/lib/ai/types';
 import { Command, type StreamMode } from '@langchain/langgraph';
@@ -33,10 +29,13 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 1000;
 
-const MAX_AUTO_APPROVE_TURNS = 8;
-const FIRST_PIPE_STREAM_MODE = ['values', 'messages', 'tools', 'custom'] as const;
+const FIRST_PIPE_STREAM_MODE = [
+    'values',
+    'messages',
+    'tools',
+    'custom',
+] as const;
 /** Resume re-runs the interrupted node. Skip `values` so checkpoint history is not re-emitted as new tool cards. Keep `tools` so the approved internet_search still appears once. */
-const RESUME_PIPE_STREAM_MODE = ['messages', 'tools', 'custom'] as const;
 
 type Agent = Awaited<ReturnType<typeof getResearchAgent>>;
 type ThreadConfig = {
@@ -90,48 +89,48 @@ export async function POST(req: Request) {
                     Boolean(webSearchEnabled),
                 );
 
-                let hitl = extractHitlData(
+                const hitl = extractHitlData(
                     await agent.getState(config, { subgraphs: true }),
                     threadId,
                 );
 
-                for (
-                    let turn = 0;
-                    webSearchEnabled &&
-                    hitl &&
-                    isAutoApprovableWebSearch(hitl) &&
-                    turn < MAX_AUTO_APPROVE_TURNS;
-                    turn++
-                ) {
-                    const previous = hitl;
-                    await pipeAgentUi(
-                        agent,
-                        new Command({
-                            resume: {
-                                decisions: webSearchApproveDecisions(
-                                    hitl.pendingCount,
-                                ),
-                            },
-                        }),
-                        config,
-                        writer,
-                        seenTools,
-                        RESUME_PIPE_STREAM_MODE,
-                        Boolean(webSearchEnabled),
-                    );
-                    hitl = extractHitlData(
-                        await agent.getState(config, { subgraphs: true }),
-                        threadId,
-                    );
-                    if (
-                        hitl &&
-                        hitl.pendingCount === previous.pendingCount &&
-                        hitl.actionNames.join('\0') ===
-                            previous.actionNames.join('\0')
-                    ) {
-                        break;
-                    }
-                }
+                // for (
+                //     let turn = 0;
+                //     webSearchEnabled &&
+                //     hitl &&
+                //     isAutoApprovableWebSearch(hitl) &&
+                //     turn < MAX_AUTO_APPROVE_TURNS;
+                //     turn++
+                // ) {
+                //     const previous = hitl;
+                //     await pipeAgentUi(
+                //         agent,
+                //         new Command({
+                //             resume: {
+                //                 decisions: webSearchApproveDecisions(
+                //                     hitl.pendingCount,
+                //                 ),
+                //             },
+                //         }),
+                //         config,
+                //         writer,
+                //         seenTools,
+                //         RESUME_PIPE_STREAM_MODE,
+                //         Boolean(webSearchEnabled),
+                //     );
+                //     hitl = extractHitlData(
+                //         await agent.getState(config, { subgraphs: true }),
+                //         threadId,
+                //     );
+                //     if (
+                //         hitl &&
+                //         hitl.pendingCount === previous.pendingCount &&
+                //         hitl.actionNames.join('\0') ===
+                //             previous.actionNames.join('\0')
+                //     ) {
+                //         break;
+                //     }
+                // }
 
                 if (hitl) {
                     writer.write({
@@ -181,9 +180,13 @@ async function humanTurnInput(
         return { messages: await toBaseMessages(messages) };
     }
 
-    const lastUser = [...messages].reverse().find((message) => message.role === 'user');
+    const lastUser = [...messages]
+        .reverse()
+        .find((message) => message.role === 'user');
     return {
-        messages: await toBaseMessages(lastUser ? [lastUser] : messages.slice(-1)),
+        messages: await toBaseMessages(
+            lastUser ? [lastUser] : messages.slice(-1),
+        ),
     };
 }
 
@@ -202,7 +205,10 @@ function createToolDedupe() {
             for (const id of pipe.ids) priorIds.add(id);
             for (const payload of pipe.payloads) priorPayloads.add(payload);
         },
-        shouldSkip(chunk: UiChunk, pipe: { ids: Set<string>; payloads: Set<string> }) {
+        shouldSkip(
+            chunk: UiChunk,
+            pipe: { ids: Set<string>; payloads: Set<string> },
+        ) {
             if (!isToolUiChunk(chunk)) return false;
 
             const id =
@@ -290,10 +296,7 @@ async function pipeAgentUi(
             if (!value) continue;
             const chunk = value as UiChunk;
             if (isInterruptToolErrorChunk(chunk)) continue;
-            if (
-                hideSearchApproval &&
-                chunk.type === 'tool-approval-request'
-            ) {
+            if (hideSearchApproval && chunk.type === 'tool-approval-request') {
                 continue;
             }
             if (seenTools.shouldSkip(chunk, pipe)) continue;

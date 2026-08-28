@@ -213,7 +213,9 @@ export default function ChatView() {
     const [thread, setThread] = useState<StoredThread | null>(null);
 
     useEffect(() => {
-        setThread(loadStoredThread());
+        setTimeout(() => {
+            setThread(loadStoredThread());
+        });
     }, []);
 
     if (!thread) {
@@ -276,7 +278,13 @@ function ChatSession({ initial }: { initial: StoredThread }) {
     }, [chatId, messages, webSearchEnabled]);
 
     useEffect(() => {
-        endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        setTimeout(() => {
+            endRef.current?.scrollIntoView({
+                behavior: 'smooth',
+                block: 'end',
+                inline: 'start',
+            });
+        }, 500);
     }, [messages, status]);
 
     useEffect(() => {
@@ -318,9 +326,9 @@ function ChatSession({ initial }: { initial: StoredThread }) {
                         Atelier
                     </h1>
                     <p className="mt-2 max-w-md text-[15px] text-ink-soft">
-                        UI messages stream from the desk. Weather and web
-                        search stay in this thread so follow-ups remember
-                        what was just found.
+                        UI messages stream from the desk. Weather and web search
+                        stay in this thread so follow-ups remember what was just
+                        found.
                     </p>
                 </div>
                 <span className="hidden font-mono text-[11px] tracking-widest text-sage uppercase sm:block">
@@ -332,7 +340,7 @@ function ChatSession({ initial }: { initial: StoredThread }) {
                 {messages.length === 0 ? (
                     <EmptyState onPick={(prompt) => setDraft(prompt)} />
                 ) : (
-                    <ol className="flex flex-col gap-8">
+                    <ol className="flex flex-col gap-8 scrollbar-hide scrollbar-auto">
                         {messages.map((message, index) => {
                             const streamingThis =
                                 busy &&
@@ -372,7 +380,7 @@ function ChatSession({ initial }: { initial: StoredThread }) {
                         })}
                     </ol>
                 )}
-                <div ref={endRef} />
+                <div ref={endRef} className="h-30" />
             </section>
 
             <form

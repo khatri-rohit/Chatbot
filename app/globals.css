@@ -1,0 +1,137 @@
+@import 'tailwindcss';
+@import 'streamdown/styles.css';
+@source "../node_modules/@streamdown/code/dist/*.js";
+@source "../node_modules/@streamdown/mermaid/dist/*.js";
+@source "../node_modules/@streamdown/math/dist/*.js";
+@source "../node_modules/@streamdown/cjk/dist/*.js";
+
+:root {
+    --paper: #efe4d0;
+    --paper-deep: #e4d3b6;
+    --ink: #24180f;
+    --ink-soft: #5c4a38;
+    --rule: rgba(36, 24, 15, 0.1);
+    --sienna: #b34a22;
+    --sage: #3f4f3c;
+    --lamp: rgba(255, 214, 160, 0.45);
+}
+
+@theme inline {
+    --color-paper: var(--paper);
+    --color-paper-deep: var(--paper-deep);
+    --color-ink: var(--ink);
+    --color-ink-soft: var(--ink-soft);
+    --color-sienna: var(--sienna);
+    --color-sage: var(--sage);
+    --font-display: var(--font-display);
+    --font-serif: var(--font-serif);
+    --font-mono: var(--font-mono);
+}
+
+html,
+body {
+    min-height: 100%;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-serif), 'Times New Roman', serif;
+    scrollbar-width: thin;
+    scrollbar-color: var(--ink) var(--paper);
+}
+
+body {
+    background-image:
+        radial-gradient(1200px 700px at 18% -10%, var(--lamp), transparent 55%),
+        radial-gradient(
+            900px 500px at 110% 0%,
+            rgba(63, 79, 60, 0.12),
+            transparent 50%
+        ),
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='.07'/%3E%3C/svg%3E");
+}
+
+.assistant-markdown {
+    font-size: 1.05rem;
+    line-height: 1.7;
+    color: var(--ink);
+}
+
+.assistant-markdown > *:first-child {
+    margin-top: 0;
+}
+
+.assistant-markdown h1,
+.assistant-markdown h2,
+.assistant-markdown h3 {
+    font-family: var(--font-display), Georgia, serif;
+    font-weight: 550;
+    letter-spacing: -0.02em;
+    margin: 1.15em 0 0.4em;
+}
+
+.assistant-markdown h1 {
+    font-size: 1.55rem;
+}
+
+.assistant-markdown h2 {
+    font-size: 1.28rem;
+}
+
+.assistant-markdown h3 {
+    font-size: 1.12rem;
+}
+
+.assistant-markdown p {
+    margin: 0.7em 0;
+}
+
+.assistant-markdown strong {
+    font-weight: 650;
+    color: var(--ink);
+}
+
+.assistant-markdown em {
+    font-style: italic;
+}
+
+.assistant-markdown ul,
+.assistant-markdown ol {
+    margin: 0.6em 0 0.8em;
+    padding-left: 1.3em;
+}
+
+.assistant-markdown li {
+    margin: 0.25em 0;
+}
+
+.assistant-markdown blockquote {
+    margin: 0.9em 0;
+    padding: 0.15em 0 0.15em 1em;
+    border-left: 2px solid var(--sienna);
+    color: var(--ink-soft);
+}
+
+.assistant-markdown a {
+    color: var(--sienna);
+    text-underline-offset: 3px;
+}
+
+.assistant-markdown code {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-size: 0.86em;
+    background: rgba(36, 24, 15, 0.06);
+    padding: 0.12em 0.35em;
+}
+
+.assistant-markdown pre {
+    overflow-x: auto;
+    margin: 1em 0;
+    padding: 0.9em 1em;
+    background: #2a2118;
+    color: #f3e6d4;
+}
+
+.assistant-markdown pre code {
+    background: transparent;
+    padding: 0;
+    color: inherit;
+}

@@ -27,7 +27,7 @@ import { NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 1000;
+export const maxDuration = 300;
 
 const FIRST_PIPE_STREAM_MODE = [
     'values',

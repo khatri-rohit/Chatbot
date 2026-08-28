@@ -284,7 +284,7 @@ function liveLabel(tool: TraceTool): string {
 
 function runningLabel(name: string): string {
     if (name === 'internet_search') return 'Searching…';
-    if (name === 'get_weather') return 'Fetching weather…';
+    // if (name === 'get_weather') return 'Fetching weather…';
     if (name === 'firecrawl_fetch_url_tool') return 'Reading pages…';
     if (name === 'task') return 'Researching…';
     return `Running ${displayName(name)}…`;

@@ -3,8 +3,9 @@ import { z } from 'zod';
 import { firecrawlFetchUrl, firecrawlSearch } from './firecrawl';
 
 /**
- * Live web search (Firecrawl). Results stay on the calling agent's
- * message list — register this on the parent so follow-ups still see hits.
+ * Live scholarly web search (Firecrawl). Results stay on the calling
+ * agent's message list — register this on the parent so follow-ups still
+ * see hits.
  *
  * The Web search pin is `configurable.webSearchEnabled`. Off → structured
  * error, not a throw, so the model can answer from memory instead of crashing.
@@ -44,7 +45,7 @@ export const firecrawlFetchUrlTool = tool(
     {
         name: 'firecrawl_fetch_url_tool',
         description:
-            'Read the live page body for specific http(s) URLs and return clipped markdown. Use URLs from a previous internet_search in this thread, or URLs the user pasted. After search, call this when snippets are not enough (quotes, methods, numbers). Do not invent URLs. Do not use this instead of internet_search. Max 3 URLs per call.',
+            'Read the live page body for specific psychology sources (papers, reviews, methods pages) and return clipped markdown. Use URLs from a previous internet_search in this thread, or URLs the user pasted. After search, call this when snippets are not enough (quotes, measures, samples). Do not invent URLs. Do not use this instead of internet_search. Max 3 URLs per call.',
         schema: z.object({
             urls: z
                 .array(z.string())
@@ -95,12 +96,12 @@ export const webSearch = tool(
     {
         name: 'internet_search',
         description:
-            'Search the live web. Returns { query, results: [{ title, url, snippet }] } or { error }. Write a specific query (names, dates, constraints). Cite the returned URLs. Do not invent sources. Set scrape=true only when snippets are not enough to answer.',
+            'Search the live web for psychology research. Returns { query, results: [{ title, url, snippet }] } or { error }. Write a scholarly query (constructs, authors, years, review, meta-analysis). Prefer peer-reviewed and primary sources. Not for weather, news, or general web tasks. Cite the returned URLs. Do not invent sources. Set scrape=true only when snippets are not enough to answer.',
         schema: z.object({
             query: z
                 .string()
                 .describe(
-                    'Focused search-box query. Include names, dates, and constraints.',
+                    'Scholarly search-box query: constructs, authors, years, and psychology terms.',
                 ),
             scrape: z
                 .boolean()

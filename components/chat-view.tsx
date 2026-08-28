@@ -231,7 +231,7 @@ export default function ChatView() {
                         </h1>
                         <p className="mt-2 max-w-md text-[15px] text-ink-soft">
                             A streaming research assistant for psychology.
-                            Weather and web search stay in this thread so
+                            Literature lookups stay in this thread so
                             follow-ups remember what was just found.
                         </p>
                     </div>
@@ -331,9 +331,8 @@ function ChatSession({ initial }: { initial: StoredThread }) {
                         Atelier
                     </h1>
                     <p className="mt-2 max-w-md text-[15px] text-ink-soft">
-                        UI messages stream from the desk. Weather and web search
-                        stay in this thread so follow-ups remember what was just
-                        found.
+                        Literature lookups stay in this thread so follow-ups
+                        remember what was just found.
                     </p>
                 </div>
                 <span className="hidden font-mono text-[11px] tracking-widest text-sage uppercase sm:block">

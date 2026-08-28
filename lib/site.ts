@@ -20,7 +20,7 @@ export const siteConfig = {
     shortName: 'Atelier',
     tagline: 'Psychology research desk',
     description:
-        'A streaming research assistant for psychology. Ask about emotion, memory, cognition, and related findings — answers render live in Markdown, with optional weather and web search in the same thread.',
+        'A streaming research assistant for psychology. Ask about emotion, memory, cognition, and related findings — answers render live in Markdown, with optional web search in the same thread.',
     locale: 'en_US',
     keywords: [
         'psychology research assistant',

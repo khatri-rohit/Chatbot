@@ -14,7 +14,7 @@ import { cjk } from '@streamdown/cjk';
  *
  * Parts come from `/api/chat` via `toUIMessageStream`:
  *   text            → model tokens (Streamdown typesets Markdown)
- *   tool-*          → LangGraph tools mode (e.g. tool-get_weather)
+ *   tool-*          → LangGraph tools mode (e.g. tool-internet_search)
  *   data-progress   → LangChain `config.writer({ type: 'progress' })`
  *   data-hitl       → route saw a LangGraph interrupt; Approve calls regenerate()
  *

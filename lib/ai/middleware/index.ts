@@ -5,7 +5,7 @@ import { isGraphBubbleUp, isGraphInterrupt } from '@langchain/langgraph';
  * Runs around every Deep Agent tool call (see `createDeepAgent({ middleware })`).
  *
  * Ollama often omits `tool_call.id`. The AI SDK adapter (and ToolMessage)
- * correlate start/end by that id. We assign one here so `tool-get_weather`
+ * correlate start/end by that id. We assign one here so `tool-internet_search`
  * parts in the UI can show input and output.
  *
  * Nested HITL (if a subgraph still interrupts) throws GraphInterrupt.

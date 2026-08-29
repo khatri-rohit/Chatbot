@@ -67,7 +67,7 @@ export function getResearchAgent() {
     if (!agentPromise) {
         agentPromise = createDeepAgent({
             name: 'atelier',
-            model: getOllamaModel(),
+            model: getOllamaModel('deepseek-v4-pro:cloud'),
             systemPrompt: PARENT_SYSTEM_PROMPT,
             memory: ['./lib/ai/harness/AGENTS.md'],
             tools: [...parentTools],

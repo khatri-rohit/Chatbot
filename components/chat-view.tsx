@@ -17,10 +17,11 @@
  */
 import { MessageParts } from '@/components/message-parts';
 import EmptyState from '@/components/EmptyState';
+import { useStickToBottom } from '@/hooks/use-stick-to-bottom';
 import type { DeskUIMessage, HitlDecision } from '@/lib/ai/types';
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
-import { FormEvent, useEffect, useRef, useState } from 'react';
+import { FormEvent, type ReactNode, useEffect, useRef, useState } from 'react';
 
 function CopyIcon() {
     return (
@@ -69,6 +70,47 @@ function CheckIcon() {
     );
 }
 
+function DeskMasthead({
+    compact = false,
+    busy,
+    children,
+}: {
+    compact?: boolean;
+    busy?: boolean;
+    children?: ReactNode;
+}) {
+    return (
+        <header
+            className={`mx-auto flex w-full max-w-3xl shrink-0 items-end justify-between gap-3 ${
+                compact
+                    ? 'px-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] pt-[max(0.75rem,env(safe-area-inset-top,0px))] pb-3 sm:px-6 sm:pt-5 sm:pb-4'
+                    : 'px-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] pt-[max(1.25rem,env(safe-area-inset-top,0px))] pb-4 sm:px-6 sm:pt-10 sm:pb-6'
+            }`}
+        >
+            <div className="min-w-0 flex-1">
+                <p className="font-mono text-[10px] tracking-[0.28em] text-sienna uppercase sm:text-[11px]">
+                    Research desk
+                </p>
+                <h1
+                    className={`mt-1 font-display tracking-tight text-ink ${
+                        compact
+                            ? 'text-2xl sm:text-3xl'
+                            : 'text-3xl sm:text-4xl md:text-5xl'
+                    }`}
+                >
+                    Atelier
+                </h1>
+                {children}
+            </div>
+            {busy === undefined ? null : (
+                <span className="mb-0.5 shrink-0 font-mono text-[10px] tracking-widest text-sage uppercase sm:text-[11px]">
+                    {busy ? 'In session' : 'Idle'}
+                </span>
+            )}
+        </header>
+    );
+}
+
 function UserMessage({ text }: { text: string }) {
     const [copied, setCopied] = useState(false);
     const resetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -92,12 +134,12 @@ function UserMessage({ text }: { text: string }) {
     };
 
     return (
-        <article className="ml-auto max-w-[85%]">
-            <p className="mb-2 text-right font-mono text-[10px] tracking-[0.22em] text-ink-soft uppercase">
+        <article className="ml-auto w-fit max-w-[min(100%,22rem)] min-[420px]:max-w-[85%]">
+            <p className="mb-1.5 text-right font-mono text-[10px] tracking-[0.22em] text-ink-soft uppercase sm:mb-2">
                 You
             </p>
             <div className="relative">
-                <p className="rounded-sm bg-ink px-4 py-3 pr-11 text-paper">
+                <p className="rounded-sm bg-ink px-3 py-2.5 pr-11 text-[15px] leading-relaxed wrap-break-word whitespace-pre-wrap text-paper sm:px-4 sm:py-3 sm:text-base">
                     {text}
                 </p>
                 <button
@@ -220,22 +262,14 @@ export default function ChatView() {
 
     if (!thread) {
         return (
-            <main className="relative flex min-h-dvh flex-col">
-                <header className="mx-auto flex w-full max-w-3xl items-end justify-between px-6 pt-10 pb-6">
-                    <div>
-                        <p className="font-mono text-[11px] tracking-[0.28em] text-sienna uppercase">
-                            Research desk
-                        </p>
-                        <h1 className="mt-2 font-display text-4xl tracking-tight text-ink md:text-5xl">
-                            Atelier
-                        </h1>
-                        <p className="mt-2 max-w-md text-[15px] text-ink-soft">
-                            A streaming research assistant for psychology.
-                            Literature lookups stay in this thread so
-                            follow-ups remember what was just found.
-                        </p>
-                    </div>
-                </header>
+            <main className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+                <DeskMasthead>
+                    <p className="mt-2 max-w-md text-[14px] text-ink-soft sm:text-[15px]">
+                        A streaming research assistant for psychology.
+                        Literature lookups stay in this thread so follow-ups
+                        remember what was just found.
+                    </p>
+                </DeskMasthead>
             </main>
         );
     }
@@ -249,7 +283,6 @@ function ChatSession({ initial }: { initial: StoredThread }) {
         initial.webSearchEnabled,
     );
     const [pinOpen, setPinOpen] = useState(false);
-    const endRef = useRef<HTMLDivElement>(null);
     const pinRef = useRef<HTMLDivElement>(null);
     const [transport] = useState(createDeskTransport);
     const chatId = initial.id;
@@ -262,11 +295,14 @@ function ChatSession({ initial }: { initial: StoredThread }) {
             transport,
         });
 
+    const { scrollerRef, contentRef, pin } = useStickToBottom(messages);
+
     const onHitl = (decision: HitlDecision, pendingCount: number) => {
         const n = Math.max(1, pendingCount);
         setTransportResume(transport, {
             decisions: Array.from({ length: n }, () => decision),
         });
+        pin();
         void regenerate().finally(() => setTransportResume(transport, null));
     };
 
@@ -281,16 +317,6 @@ function ChatSession({ initial }: { initial: StoredThread }) {
             webSearchEnabled,
         });
     }, [chatId, messages, webSearchEnabled]);
-
-    useEffect(() => {
-        setTimeout(() => {
-            endRef.current?.scrollIntoView({
-                behavior: 'smooth',
-                block: 'end',
-                inline: 'start',
-            });
-        }, 500);
-    }, [messages, status]);
 
     useEffect(() => {
         if (!pinOpen) return;
@@ -311,87 +337,87 @@ function ChatSession({ initial }: { initial: StoredThread }) {
         if (!query || status !== 'ready') return;
         setTransportResume(transport, null);
         setDraft('');
+        pin();
         void sendMessage({ text: query });
     };
 
     const busy = status === 'submitted' || status === 'streaming';
+    const compact = messages.length > 0;
 
     return (
-        <main className="relative flex min-h-dvh flex-col">
-            <aside className="pointer-events-none absolute top-16 left-5 hidden origin-top-left -rotate-90 font-mono text-[11px] tracking-[0.35em] text-ink-soft uppercase md:block">
+        <main className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+            <aside className="pointer-events-none absolute top-16 left-5 hidden origin-top-left -rotate-90 font-mono text-[11px] tracking-[0.35em] text-ink-soft uppercase lg:block">
                 Field notes · Vol. 01
             </aside>
 
-            <header className="mx-auto flex w-full max-w-3xl items-end justify-between px-6 pt-10 pb-6">
-                <div>
-                    <p className="font-mono text-[11px] tracking-[0.28em] text-sienna uppercase">
-                        Research desk
-                    </p>
-                    <h1 className="mt-2 font-display text-4xl tracking-tight text-ink md:text-5xl">
-                        Atelier
-                    </h1>
-                    <p className="mt-2 max-w-md text-[15px] text-ink-soft">
+            <DeskMasthead compact={compact} busy={busy}>
+                {compact ? null : (
+                    <p className="mt-2 max-w-md text-[14px] text-ink-soft sm:text-[15px]">
                         Literature lookups stay in this thread so follow-ups
                         remember what was just found.
                     </p>
-                </div>
-                <span className="hidden font-mono text-[11px] tracking-widest text-sage uppercase sm:block">
-                    {busy ? 'In session' : 'Idle'}
-                </span>
-            </header>
-
-            <section className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-6 pb-36">
-                {messages.length === 0 ? (
-                    <EmptyState onPick={(prompt) => setDraft(prompt)} />
-                ) : (
-                    <ol className="flex flex-col gap-8 scrollbar-hide scrollbar-auto">
-                        {messages.map((message, index) => {
-                            const streamingThis =
-                                busy &&
-                                index === messages.length - 1 &&
-                                message.role === 'assistant';
-
-                            return (
-                                <li key={message.id}>
-                                    {message.role === 'user' ? (
-                                        <UserMessage
-                                            text={message.parts
-                                                .flatMap((part) =>
-                                                    part.type === 'text'
-                                                        ? [part.text]
-                                                        : [],
-                                                )
-                                                .join('')}
-                                        />
-                                    ) : (
-                                        <article aria-live="polite">
-                                            <p className="mb-2 font-mono text-[10px] tracking-[0.22em] text-sage uppercase">
-                                                Desk
-                                            </p>
-                                            <MessageParts
-                                                message={message}
-                                                isStreaming={streamingThis}
-                                                onHitl={
-                                                    streamingThis
-                                                        ? undefined
-                                                        : onHitl
-                                                }
-                                            />
-                                        </article>
-                                    )}
-                                </li>
-                            );
-                        })}
-                    </ol>
                 )}
-                <div ref={endRef} className="h-30" />
+            </DeskMasthead>
+
+            <section
+                ref={scrollerRef}
+                className="scrollbar-hidden mx-auto min-h-0 w-full min-w-0 max-w-3xl flex-1 overflow-x-hidden overflow-y-auto overscroll-contain [overflow-anchor:none] px-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] pb-4 sm:px-6"
+            >
+                <div ref={contentRef} className="min-w-0">
+                    {messages.length === 0 ? (
+                        <EmptyState onPick={(prompt) => setDraft(prompt)} />
+                    ) : (
+                        <ol className="flex min-w-0 flex-col gap-6 sm:gap-8">
+                            {messages.map((message, index) => {
+                                const streamingThis =
+                                    busy &&
+                                    index === messages.length - 1 &&
+                                    message.role === 'assistant';
+
+                                return (
+                                    <li key={message.id} className="min-w-0">
+                                        {message.role === 'user' ? (
+                                            <UserMessage
+                                                text={message.parts
+                                                    .flatMap((part) =>
+                                                        part.type === 'text'
+                                                            ? [part.text]
+                                                            : [],
+                                                    )
+                                                    .join('')}
+                                            />
+                                        ) : (
+                                            <article
+                                                aria-live="polite"
+                                                className="min-w-0 max-w-full"
+                                            >
+                                                <p className="mb-1.5 font-mono text-[10px] tracking-[0.22em] text-sage uppercase sm:mb-2">
+                                                    Desk
+                                                </p>
+                                                <MessageParts
+                                                    message={message}
+                                                    isStreaming={streamingThis}
+                                                    onHitl={
+                                                        streamingThis
+                                                            ? undefined
+                                                            : onHitl
+                                                    }
+                                                />
+                                            </article>
+                                        )}
+                                    </li>
+                                );
+                            })}
+                        </ol>
+                    )}
+                </div>
             </section>
 
             <form
                 onSubmit={onSubmit}
-                className="fixed inset-x-0 bottom-0 border-t border-(--rule) bg-[color-mix(in_srgb,var(--paper)_88%,transparent)] px-4 py-4 backdrop-blur-md"
+                className="shrink-0 border-t border-(--rule) bg-[color-mix(in_srgb,var(--paper)_88%,transparent)] px-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] backdrop-blur-md sm:px-4 sm:pt-4"
             >
-                <div className="mx-auto flex w-full max-w-3xl items-end gap-3">
+                <div className="mx-auto flex w-full min-w-0 max-w-3xl items-end gap-2 sm:gap-3">
                     <div ref={pinRef} className="relative shrink-0">
                         <button
                             type="button"
@@ -399,7 +425,7 @@ function ChatSession({ initial }: { initial: StoredThread }) {
                             aria-expanded={pinOpen}
                             aria-pressed={webSearchEnabled}
                             onClick={() => setPinOpen((open) => !open)}
-                            className={`flex h-12 w-12 items-center justify-center rounded-sm border transition-colors focus-visible:ring-2 focus-visible:ring-sienna/50 focus-visible:outline-none ${
+                            className={`flex h-11 w-11 items-center justify-center rounded-sm border transition-colors focus-visible:ring-2 focus-visible:ring-sienna/50 focus-visible:outline-none sm:h-12 sm:w-12 ${
                                 webSearchEnabled
                                     ? 'border-sage bg-sage text-paper'
                                     : 'border-(--rule) text-ink-soft hover:border-ink hover:text-ink'
@@ -410,7 +436,7 @@ function ChatSession({ initial }: { initial: StoredThread }) {
                         {pinOpen ? (
                             <div
                                 role="menu"
-                                className="absolute bottom-[calc(100%+8px)] left-0 z-20 w-56 border border-(--rule) bg-paper px-1 py-1 shadow-[0_-8px_24px_rgba(36,24,15,0.08)]"
+                                className="absolute bottom-[calc(100%+8px)] left-0 z-20 w-56 max-w-[calc(100vw-2rem)] border border-(--rule) bg-paper px-1 py-1 shadow-[0_-8px_24px_rgba(36,24,15,0.08)]"
                             >
                                 <button
                                     type="button"
@@ -451,13 +477,15 @@ function ChatSession({ initial }: { initial: StoredThread }) {
                         }}
                         placeholder="What is human emotion?"
                         disabled={busy}
-                        className="min-h-[3.2rem] flex-1 resize-none rounded-sm border border-(--rule) bg-paper-deep/50 px-4 py-3 outline-none ring-sienna/40 placeholder:text-ink-soft/70 focus:ring-2 disabled:opacity-60"
+                        enterKeyHint="send"
+                        autoComplete="off"
+                        className="min-h-11 max-h-36 min-w-0 flex-1 resize-none rounded-sm border border-(--rule) bg-paper-deep/50 px-3 py-2.5 text-base outline-none ring-sienna/40 placeholder:text-ink-soft/70 focus:ring-2 disabled:opacity-60 sm:min-h-[3.2rem] sm:max-h-48 sm:px-4 sm:py-3"
                     />
                     {busy ? (
                         <button
                             type="button"
                             onClick={() => stop()}
-                            className="h-12 rounded-sm border border-ink px-4 font-mono text-xs tracking-[0.18em] uppercase"
+                            className="h-11 shrink-0 rounded-sm border border-ink px-3 font-mono text-[11px] tracking-[0.18em] whitespace-nowrap uppercase sm:h-12 sm:px-4 sm:text-xs"
                         >
                             Stop
                         </button>
@@ -465,20 +493,20 @@ function ChatSession({ initial }: { initial: StoredThread }) {
                         <button
                             type="submit"
                             disabled={!draft.trim()}
-                            className="h-12 rounded-sm bg-sienna px-5 font-mono text-xs tracking-[0.18em] text-paper uppercase disabled:opacity-40"
+                            className="h-11 shrink-0 rounded-sm bg-sienna px-3.5 font-mono text-[11px] tracking-[0.18em] whitespace-nowrap text-paper uppercase disabled:opacity-40 sm:h-12 sm:px-5 sm:text-xs"
                         >
                             Ask
                         </button>
                     )}
                 </div>
                 {webSearchEnabled ? (
-                    <p className="mx-auto mt-2 max-w-3xl font-mono text-[10px] tracking-wide text-sage uppercase">
+                    <p className="mx-auto mt-2 max-w-3xl font-mono text-[10px] leading-snug tracking-wide text-sage uppercase">
                         Web search pinned — the desk may look up the live web
                     </p>
                 ) : null}
                 {error ? (
                     <p
-                        className="mx-auto mt-2 max-w-3xl font-mono text-xs text-sienna"
+                        className="mx-auto mt-2 max-w-3xl font-mono text-xs wrap-break-word text-sienna"
                         role="alert"
                     >
                         {error.message}

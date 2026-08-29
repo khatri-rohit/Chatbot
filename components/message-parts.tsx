@@ -68,7 +68,7 @@ export function MessageParts({
     );
 
     return (
-        <div className="flex flex-col gap-3">
+        <div className="flex min-w-0 flex-col gap-3">
             {blocks.map((block, index) => {
                 if (block.kind === 'hitl') {
                     if (toolAlreadyShowsApproval) return null;
@@ -99,7 +99,7 @@ export function MessageParts({
 
             {text ? (
                 <Streamdown
-                    className="assistant-markdown"
+                    className="assistant-markdown min-w-0 max-w-full"
                     plugins={{ code, mermaid, math, cjk }}
                     isAnimating={isStreaming}
                 >
@@ -236,19 +236,19 @@ function HitlCard({
     onHitl?: (decision: HitlDecision) => void;
 }) {
     return (
-        <div className="border border-(--rule) bg-paper-deep/40 px-4 py-3">
-            <p className="font-mono text-[10px] tracking-[0.22em] text-sienna uppercase">
+        <div className="min-w-0 border border-(--rule) bg-paper-deep/40 px-3 py-3 sm:px-4">
+            <p className="font-mono text-[10px] tracking-[0.22em] wrap-break-word text-sienna uppercase">
                 Needs approval · {actionName}
                 {pendingCount > 1 ? ` · ${pendingCount} calls` : ''}
             </p>
-            <p className="mt-2 text-sm text-ink">{description}</p>
+            <p className="mt-2 text-sm wrap-break-word text-ink">{description}</p>
             {args != null ? (
-                <pre className="mt-2 overflow-x-auto font-mono text-[11px] text-ink-soft">
+                <pre className="mt-2 max-w-full overflow-x-auto font-mono text-[11px] text-ink-soft">
                     {JSON.stringify(args, null, 2)}
                 </pre>
             ) : null}
             {onHitl ? (
-                <div className="mt-3 flex gap-2">
+                <div className="mt-3 flex flex-wrap gap-2">
                     <button
                         type="button"
                         onClick={() =>

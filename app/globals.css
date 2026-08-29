@@ -30,12 +30,26 @@
 
 html,
 body {
-    min-height: 100%;
+    height: 100%;
     background: var(--paper);
     color: var(--ink);
     font-family: var(--font-serif), 'Times New Roman', serif;
-    scrollbar-width: thin;
-    scrollbar-color: var(--ink) var(--paper);
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+    display: none;
+}
+
+.scrollbar-hidden {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.scrollbar-hidden::-webkit-scrollbar {
+    display: none;
 }
 
 body {
@@ -50,9 +64,19 @@ body {
 }
 
 .assistant-markdown {
-    font-size: 1.05rem;
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    font-size: 1.02rem;
     line-height: 1.7;
     color: var(--ink);
+}
+
+@media (min-width: 640px) {
+    .assistant-markdown {
+        font-size: 1.05rem;
+    }
 }
 
 .assistant-markdown > *:first-child {
@@ -69,15 +93,29 @@ body {
 }
 
 .assistant-markdown h1 {
-    font-size: 1.55rem;
-}
-
-.assistant-markdown h2 {
     font-size: 1.28rem;
 }
 
+.assistant-markdown h2 {
+    font-size: 1.14rem;
+}
+
 .assistant-markdown h3 {
-    font-size: 1.12rem;
+    font-size: 1.06rem;
+}
+
+@media (min-width: 640px) {
+    .assistant-markdown h1 {
+        font-size: 1.55rem;
+    }
+
+    .assistant-markdown h2 {
+        font-size: 1.28rem;
+    }
+
+    .assistant-markdown h3 {
+        font-size: 1.12rem;
+    }
 }
 
 .assistant-markdown p {
@@ -124,14 +162,30 @@ body {
 
 .assistant-markdown pre {
     overflow-x: auto;
+    max-width: 100%;
     margin: 1em 0;
-    padding: 0.9em 1em;
+    padding: 0.75em 0.85em;
     background: #2a2118;
     color: #f3e6d4;
+    -webkit-overflow-scrolling: touch;
 }
 
 .assistant-markdown pre code {
     background: transparent;
     padding: 0;
     color: inherit;
+}
+
+.assistant-markdown table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.assistant-markdown img,
+.assistant-markdown video,
+.assistant-markdown svg {
+    max-width: 100%;
+    height: auto;
 }

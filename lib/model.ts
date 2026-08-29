@@ -1,8 +1,7 @@
 import { ChatOllama } from '@langchain/ollama';
 
-/** ChatOllama instance used by the singleton Deep Agent in `lib/ai/agent.ts`. */
 export function getOllamaModel(modelName = 'gemma4:cloud') {
-    const model = new ChatOllama({
+    return new ChatOllama({
         baseUrl: process.env.OLLAMA_HOST ?? 'https://ollama.com',
         model: modelName,
         headers: {
@@ -11,8 +10,5 @@ export function getOllamaModel(modelName = 'gemma4:cloud') {
         repeatPenalty: 1.1,
         temperature: 0.3,
         keepAlive: '25m',
-        // seed: 2
     });
-
-    return model;
 }

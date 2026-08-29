@@ -10,19 +10,8 @@ import { math } from '@streamdown/math';
 import { cjk } from '@streamdown/cjk';
 
 /**
- * Renders one AI SDK `UIMessage.part`.
- *
- * Parts come from `/api/chat` via `toUIMessageStream`:
- *   text            → model tokens (Streamdown typesets Markdown)
- *   tool-*          → LangGraph tools mode (e.g. tool-internet_search)
- *   data-progress   → LangChain `config.writer({ type: 'progress' })`
- *   data-hitl       → route saw a LangGraph interrupt; Approve calls regenerate()
- *
- * Consecutive tool / progress parts collapse into one `ToolTrace` dropdown
- * so a research loop does not stack a card per call.
- *
- * Duplicate `task` retries (same toolCallId or same name+input) collapse
- * to the latest state so the desk shows one research story.
+ * Renders one assistant message: tool trace, HITL card, then Markdown.
+ * Duplicate tool parts collapse so a research loop shows one story.
  */
 
 const Streamdown = dynamic(

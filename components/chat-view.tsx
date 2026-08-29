@@ -1,20 +1,5 @@
 'use client';
 
-/**
- * Chat UI — AI SDK `useChat` talking to Deep Agents through `/api/chat`.
- *
- * Connection map:
- *   sendMessage({ text })  →  DefaultChatTransport POST { id, messages }
- *   /api/chat              →  Deep Agent stream → toUIMessageStream
- *   messages[].parts       →  MessageParts (Streamdown + tools + HITL)
- *   Approve/Deny           →  regenerate() with resume.decisions
- *                            →  LangGraph Command on the same thread id
- *   Pin → Web search       → POST webSearchEnabled; internet_search may
- *                            call Firecrawl (off → structured error)
- *
- * `useChat({ id })` is the LangGraph `thread_id`. Stored in sessionStorage
- * so a refresh keeps the same checkpoint.
- */
 import { MessageParts } from '@/components/message-parts';
 import EmptyState from '@/components/EmptyState';
 import { useStickToBottom } from '@/hooks/use-stick-to-bottom';
@@ -156,51 +141,35 @@ function UserMessage({ text }: { text: string }) {
     );
 }
 
-const resumeHolders = new WeakMap<
+type TransportExtras = {
+    resume?: { decisions: HitlDecision[] };
+    webSearchEnabled: boolean;
+};
+
+const transportExtras = new WeakMap<
     DefaultChatTransport<DeskUIMessage>,
-    {
-        resume: { decisions: HitlDecision[] } | null;
-        webSearchEnabled: boolean;
-    }
+    TransportExtras
 >();
 
+function extrasOf(transport: DefaultChatTransport<DeskUIMessage>) {
+    return transportExtras.get(transport);
+}
+
 function createDeskTransport() {
-    const holder: {
-        resume: { decisions: HitlDecision[] } | null;
-        webSearchEnabled: boolean;
-    } = {
-        resume: null,
-        webSearchEnabled: false,
-    };
+    const extras: TransportExtras = { webSearchEnabled: false };
     const transport = new DefaultChatTransport<DeskUIMessage>({
         api: '/api/chat',
         prepareSendMessagesRequest: ({ id, messages }) => ({
             body: {
                 id,
                 messages,
-                resume: holder.resume ?? undefined,
-                webSearchEnabled: holder.webSearchEnabled,
+                resume: extras.resume,
+                webSearchEnabled: extras.webSearchEnabled,
             },
         }),
     });
-    resumeHolders.set(transport, holder);
+    transportExtras.set(transport, extras);
     return transport;
-}
-
-function setTransportResume(
-    transport: DefaultChatTransport<DeskUIMessage>,
-    resume: { decisions: HitlDecision[] } | null,
-) {
-    const holder = resumeHolders.get(transport);
-    if (holder) holder.resume = resume;
-}
-
-function setTransportWebSearch(
-    transport: DefaultChatTransport<DeskUIMessage>,
-    enabled: boolean,
-) {
-    const holder = resumeHolders.get(transport);
-    if (holder) holder.webSearchEnabled = enabled;
 }
 
 const THREAD_STORAGE_KEY = 'atelier-thread';
@@ -211,23 +180,21 @@ type StoredThread = {
     webSearchEnabled: boolean;
 };
 
+function emptyThread(): StoredThread {
+    return {
+        id: crypto.randomUUID(),
+        messages: [],
+        webSearchEnabled: false,
+    };
+}
+
 function loadStoredThread(): StoredThread {
     try {
         const raw = sessionStorage.getItem(THREAD_STORAGE_KEY);
-        if (!raw) {
-            return {
-                id: crypto.randomUUID(),
-                messages: [],
-                webSearchEnabled: false,
-            };
-        }
+        if (!raw) return emptyThread();
         const parsed = JSON.parse(raw) as Partial<StoredThread>;
         if (typeof parsed.id !== 'string' || parsed.id.length < 8) {
-            return {
-                id: crypto.randomUUID(),
-                messages: [],
-                webSearchEnabled: false,
-            };
+            return emptyThread();
         }
         return {
             id: parsed.id,
@@ -235,11 +202,7 @@ function loadStoredThread(): StoredThread {
             webSearchEnabled: Boolean(parsed.webSearchEnabled),
         };
     } catch {
-        return {
-            id: crypto.randomUUID(),
-            messages: [],
-            webSearchEnabled: false,
-        };
+        return emptyThread();
     }
 }
 
@@ -255,9 +218,8 @@ export default function ChatView() {
     const [thread, setThread] = useState<StoredThread | null>(null);
 
     useEffect(() => {
-        setTimeout(() => {
-            setThread(loadStoredThread());
-        });
+        const timer = window.setTimeout(() => setThread(loadStoredThread()), 0);
+        return () => window.clearTimeout(timer);
     }, []);
 
     if (!thread) {
@@ -286,7 +248,8 @@ function ChatSession({ initial }: { initial: StoredThread }) {
     const pinRef = useRef<HTMLDivElement>(null);
     const [transport] = useState(createDeskTransport);
     const chatId = initial.id;
-    setTransportWebSearch(transport, webSearchEnabled);
+    const bag = extrasOf(transport);
+    if (bag) bag.webSearchEnabled = webSearchEnabled;
 
     const { messages, sendMessage, regenerate, status, stop, error } =
         useChat<DeskUIMessage>({
@@ -299,16 +262,18 @@ function ChatSession({ initial }: { initial: StoredThread }) {
 
     const onHitl = (decision: HitlDecision, pendingCount: number) => {
         const n = Math.max(1, pendingCount);
-        setTransportResume(transport, {
-            decisions: Array.from({ length: n }, () => decision),
-        });
+        const bag = extrasOf(transport);
+        if (bag) {
+            bag.resume = {
+                decisions: Array.from({ length: n }, () => decision),
+            };
+        }
         pin();
-        void regenerate().finally(() => setTransportResume(transport, null));
+        void regenerate().finally(() => {
+            const bag = extrasOf(transport);
+            if (bag) bag.resume = undefined;
+        });
     };
-
-    useEffect(() => {
-        setTransportWebSearch(transport, webSearchEnabled);
-    }, [transport, webSearchEnabled]);
 
     useEffect(() => {
         saveStoredThread({
@@ -335,7 +300,8 @@ function ChatSession({ initial }: { initial: StoredThread }) {
         event.preventDefault();
         const query = draft.trim();
         if (!query || status !== 'ready') return;
-        setTransportResume(transport, null);
+        const bag = extrasOf(transport);
+        if (bag) bag.resume = undefined;
         setDraft('');
         pin();
         void sendMessage({ text: query });

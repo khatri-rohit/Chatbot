@@ -12,11 +12,8 @@ function isScrolledToBottom(scroller: HTMLElement) {
 }
 
 /**
- * Pins a scroll pane to the bottom while content grows (streaming tokens,
- * markdown layout). Uses instant `scrollTop` once per frame so stacked
- * smooth-scroll animations cannot fight each other.
- *
- * `watch` should change when the list updates (e.g. `messages`).
+ * Pins a scroll pane to the bottom while content grows.
+ * Instant `scrollTop`, one frame at a time. Scroll up to unpin.
  */
 export function useStickToBottom(watch: unknown) {
     const scrollerRef = useRef<HTMLElement>(null);

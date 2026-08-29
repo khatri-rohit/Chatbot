@@ -1,7 +1,8 @@
 'use client';
 
+import HitlCard from '@/components/hitl-card';
+import ToolTrace, { type TraceItem } from '@/components/tool-trace';
 import type { DeskUIMessage, HitlDecision } from '@/lib/ai/types';
-import { ToolTrace, type TraceItem } from '@/components/tool-trace';
 import { getToolName, isToolUIPart } from 'ai';
 import dynamic from 'next/dynamic';
 import { code } from '@streamdown/code';
@@ -9,17 +10,12 @@ import { mermaid } from '@streamdown/mermaid';
 import { math } from '@streamdown/math';
 import { cjk } from '@streamdown/cjk';
 
-/**
- * Renders one assistant message: tool trace, HITL card, then Markdown.
- * Duplicate tool parts collapse so a research loop shows one story.
- */
-
 const Streamdown = dynamic(
     () => import('streamdown').then((mod) => mod.Streamdown),
     { ssr: false },
 );
 
-export function MessageParts({
+export default function MessageParts({
     message,
     isStreaming,
     onHitl,
@@ -163,8 +159,7 @@ function toTraceItem(
         input: 'input' in part ? part.input : undefined,
         output: 'output' in part ? part.output : undefined,
         errorText: 'errorText' in part ? part.errorText : undefined,
-        onHitl:
-            part.state === 'approval-requested' ? resume : undefined,
+        onHitl: part.state === 'approval-requested' ? resume : undefined,
     };
 }
 
@@ -209,55 +204,4 @@ function toolPartKey(
     }
     if (part.toolCallId) return part.toolCallId;
     return `${name}:${input}:${fallbackIndex}`;
-}
-
-function HitlCard({
-    description,
-    actionName,
-    args,
-    pendingCount,
-    onHitl,
-}: {
-    description: string;
-    actionName: string;
-    args: unknown;
-    pendingCount: number;
-    onHitl?: (decision: HitlDecision) => void;
-}) {
-    return (
-        <div className="min-w-0 border border-(--rule) bg-paper-deep/40 px-3 py-3 sm:px-4">
-            <p className="font-mono text-[10px] tracking-[0.22em] wrap-break-word text-sienna uppercase">
-                Needs approval · {actionName}
-                {pendingCount > 1 ? ` · ${pendingCount} calls` : ''}
-            </p>
-            <p className="mt-2 text-sm wrap-break-word text-ink">{description}</p>
-            {args != null ? (
-                <pre className="mt-2 max-w-full overflow-x-auto font-mono text-[11px] text-ink-soft">
-                    {JSON.stringify(args, null, 2)}
-                </pre>
-            ) : null}
-            {onHitl ? (
-                <div className="mt-3 flex flex-wrap gap-2">
-                    <button
-                        type="button"
-                        onClick={() =>
-                            onHitl({ type: 'approve', message: 'Approved' })
-                        }
-                        className="h-9 rounded-sm bg-sage px-3 font-mono text-[10px] tracking-[0.18em] text-paper uppercase"
-                    >
-                        Approve
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() =>
-                            onHitl({ type: 'reject', message: 'Denied' })
-                        }
-                        className="h-9 rounded-sm border border-ink px-3 font-mono text-[10px] tracking-[0.18em] uppercase"
-                    >
-                        Deny
-                    </button>
-                </div>
-            ) : null}
-        </div>
-    );
 }

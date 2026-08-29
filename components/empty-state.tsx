@@ -1,4 +1,8 @@
-function EmptyState({ onPick }: { onPick: (prompt: string) => void }) {
+export default function EmptyState({
+    onPick,
+}: {
+    onPick: (prompt: string) => void;
+}) {
     const prompts = [
         'What is human emotion?',
         'How does working memory differ from long-term memory?',
@@ -29,5 +33,3 @@ function EmptyState({ onPick }: { onPick: (prompt: string) => void }) {
         </div>
     );
 }
-
-export default EmptyState;

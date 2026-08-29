@@ -1,6 +1,7 @@
 'use client';
 
 import type { HitlDecision } from '@/lib/ai/types';
+import { ChevronRight } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 
 export type TraceTool = {
@@ -22,7 +23,7 @@ export type TraceProgress = {
 
 export type TraceItem = TraceTool | TraceProgress;
 
-export function ToolTrace({
+export default function ToolTrace({
     items,
     isStreaming,
 }: {
@@ -80,7 +81,13 @@ export function ToolTrace({
                 onClick={() => setOpen((value) => !value)}
                 className="flex min-h-11 w-full items-center gap-3 px-3 text-left focus-visible:bg-paper-deep/50 focus-visible:ring-2 focus-visible:ring-sienna/50 focus-visible:outline-none sm:h-12 sm:px-4"
             >
-                <Chevron open={open} />
+                <ChevronRight
+                    className={`size-3.5 shrink-0 text-ink-soft transition-transform ${
+                        open ? 'rotate-90' : ''
+                    }`}
+                    strokeWidth={1.5}
+                    aria-hidden
+                />
                 <span className="min-w-0 flex-1 truncate font-mono text-[10px] tracking-[0.22em] text-sage uppercase">
                     {summary}
                 </span>
@@ -240,23 +247,6 @@ function StatusMark({
                 invoking || running || approval ? 'animate-pulse' : ''
             }`}
         />
-    );
-}
-
-function Chevron({ open }: { open: boolean }) {
-    return (
-        <svg
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            aria-hidden
-            className={`h-3.5 w-3.5 shrink-0 text-ink-soft transition-transform ${
-                open ? 'rotate-90' : ''
-            }`}
-        >
-            <path d="M6 3.5 11 8l-5 4.5" />
-        </svg>
     );
 }
 

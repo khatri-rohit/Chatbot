@@ -8,7 +8,11 @@ import UserMessage from '@/components/user-message';
 import { useStickToBottom } from '@/hooks/use-stick-to-bottom';
 import type { StoredThread } from '@/lib/chat-thread';
 import { saveStoredThread } from '@/lib/chat-thread';
-import { createDeskTransport, extrasOf } from '@/lib/desk-transport';
+import {
+    createDeskTransport,
+    extrasOf,
+    type TransportExtras,
+} from '@/lib/desk-transport';
 import type { DeskUIMessage, HitlDecision } from '@/lib/ai/types';
 import { useChat } from '@ai-sdk/react';
 import { FormEvent, useEffect, useRef, useState } from 'react';
@@ -22,8 +26,7 @@ export default function ChatSession({ initial }: { initial: StoredThread }) {
     const pinRef = useRef<HTMLDivElement>(null);
     const [transport] = useState(createDeskTransport);
     const chatId = initial.id;
-    const bag = extrasOf(transport);
-    if (bag) bag.webSearchEnabled = webSearchEnabled;
+    const hitlPending = useRef(false);
 
     const { messages, sendMessage, regenerate, status, stop, error } =
         useChat<DeskUIMessage>({
@@ -34,28 +37,43 @@ export default function ChatSession({ initial }: { initial: StoredThread }) {
 
     const { scrollerRef, contentRef, pin } = useStickToBottom(messages);
 
-    const onHitl = (decision: HitlDecision, pendingCount: number) => {
-        const n = Math.max(1, pendingCount);
+    const applyTransportExtras = (resume?: TransportExtras['resume']) => {
         const extras = extrasOf(transport);
-        if (extras) {
-            extras.resume = {
-                decisions: Array.from({ length: n }, () => decision),
-            };
-        }
+        if (!extras) return;
+        extras.webSearchEnabled = webSearchEnabled;
+        extras.resume = resume;
+    };
+
+    const onHitl = (decision: HitlDecision, pendingCount: number) => {
+        if (hitlPending.current) return;
+        hitlPending.current = true;
+        const n = Math.max(1, pendingCount);
+        applyTransportExtras({
+            decisions: Array.from({ length: n }, () => decision),
+        });
         pin();
         void regenerate().finally(() => {
+            hitlPending.current = false;
             const extras = extrasOf(transport);
             if (extras) extras.resume = undefined;
         });
     };
 
     useEffect(() => {
-        saveStoredThread({
-            id: chatId,
-            messages,
-            webSearchEnabled,
-        });
-    }, [chatId, messages, webSearchEnabled]);
+        const persist = () =>
+            saveStoredThread({
+                id: chatId,
+                messages,
+                webSearchEnabled,
+            });
+        const streaming = status === 'streaming' || status === 'submitted';
+        if (!streaming) {
+            persist();
+            return;
+        }
+        const timer = window.setTimeout(persist, 400);
+        return () => window.clearTimeout(timer);
+    }, [chatId, messages, webSearchEnabled, status]);
 
     useEffect(() => {
         if (!pinOpen) return;
@@ -74,8 +92,7 @@ export default function ChatSession({ initial }: { initial: StoredThread }) {
         event.preventDefault();
         const query = draft.trim();
         if (!query || status !== 'ready') return;
-        const extras = extrasOf(transport);
-        if (extras) extras.resume = undefined;
+        applyTransportExtras(undefined);
         setDraft('');
         pin();
         void sendMessage({ text: query });

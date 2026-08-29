@@ -10,7 +10,7 @@ export type StoredThread = {
 
 export function emptyThread(): StoredThread {
     return {
-        id: crypto.randomUUID(),
+        id: newThreadId(),
         messages: [],
         webSearchEnabled: false,
     };
@@ -26,12 +26,38 @@ export function loadStoredThread(): StoredThread {
         }
         return {
             id: parsed.id,
-            messages: Array.isArray(parsed.messages) ? parsed.messages : [],
+            messages: restoreMessages(parsed.messages),
             webSearchEnabled: Boolean(parsed.webSearchEnabled),
         };
     } catch {
         return emptyThread();
     }
+}
+
+function newThreadId(): string {
+    try {
+        if (typeof crypto?.randomUUID === 'function') {
+            return crypto.randomUUID();
+        }
+    } catch {
+        /* insecure context / missing Web Crypto */
+    }
+    return `thread-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function restoreMessages(raw: unknown): DeskUIMessage[] {
+    if (!Array.isArray(raw)) return [];
+    return raw.filter(isRestoredMessage);
+}
+
+function isRestoredMessage(value: unknown): value is DeskUIMessage {
+    if (value == null || typeof value !== 'object') return false;
+    const rec = value as Record<string, unknown>;
+    return (
+        typeof rec.id === 'string' &&
+        typeof rec.role === 'string' &&
+        Array.isArray(rec.parts)
+    );
 }
 
 export function saveStoredThread(thread: StoredThread) {

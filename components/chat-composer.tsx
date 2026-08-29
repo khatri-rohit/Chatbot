@@ -39,7 +39,6 @@ export default function ChatComposer({
                         type="button"
                         aria-label="Tools"
                         aria-expanded={pinOpen}
-                        aria-pressed={webSearchEnabled}
                         onClick={onTogglePin}
                         className={`flex h-11 w-11 items-center justify-center rounded-sm border transition-colors focus-visible:ring-2 focus-visible:ring-sienna/50 focus-visible:outline-none sm:h-12 sm:w-12 ${
                             webSearchEnabled
@@ -84,7 +83,11 @@ export default function ChatComposer({
                     value={draft}
                     onChange={(event) => onDraftChange(event.target.value)}
                     onKeyDown={(event) => {
-                        if (event.key === 'Enter' && !event.shiftKey) {
+                        if (
+                            event.key === 'Enter' &&
+                            !event.shiftKey &&
+                            !event.nativeEvent.isComposing
+                        ) {
                             event.preventDefault();
                             event.currentTarget.form?.requestSubmit();
                         }

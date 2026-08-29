@@ -1,6 +1,7 @@
 import { getSiteUrl, siteConfig } from '@/lib/site';
 import type { Metadata, Viewport } from 'next';
 import { Fraunces, Source_Serif_4, IBM_Plex_Mono } from 'next/font/google';
+import 'katex/dist/katex.min.css';
 import './globals.css';
 
 const display = Fraunces({

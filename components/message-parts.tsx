@@ -1,19 +1,10 @@
 'use client';
 
+import AssistantMarkdown from '@/components/assistant-markdown';
 import HitlCard from '@/components/hitl-card';
 import ToolTrace, { type TraceItem } from '@/components/tool-trace';
 import type { DeskUIMessage, HitlDecision } from '@/lib/ai/types';
 import { getToolName, isToolUIPart } from 'ai';
-import dynamic from 'next/dynamic';
-import { code } from '@streamdown/code';
-import { mermaid } from '@streamdown/mermaid';
-import { math } from '@streamdown/math';
-import { cjk } from '@streamdown/cjk';
-
-const Streamdown = dynamic(
-    () => import('streamdown').then((mod) => mod.Streamdown),
-    { ssr: false },
-);
 
 export default function MessageParts({
     message,
@@ -83,13 +74,9 @@ export default function MessageParts({
             })}
 
             {text ? (
-                <Streamdown
-                    className="assistant-markdown min-w-0 max-w-full"
-                    plugins={{ code, mermaid, math, cjk }}
-                    isAnimating={isStreaming}
-                >
+                <AssistantMarkdown isStreaming={isStreaming}>
                     {text}
-                </Streamdown>
+                </AssistantMarkdown>
             ) : null}
         </div>
     );

@@ -54,6 +54,8 @@ export function getResearchAgent() {
             name: 'atelier',
             model: getOllamaModel('deepseek-v4-pro:cloud'),
             systemPrompt: PARENT_SYSTEM_PROMPT,
+            // StateBackend (default) cannot read this path from disk.
+            // Identity is in PARENT_SYSTEM_PROMPT; this file is harness copy.
             memory: ['./lib/ai/harness/AGENTS.md'],
             tools: parentTools,
             middleware: [

@@ -171,7 +171,7 @@ export default function ChatSession({ initial }: { initial: StoredThread }) {
                                                         className="min-w-0 max-w-full"
                                                     >
                                                         <p className="mb-1.5 font-mono text-[10px] tracking-[0.22em] text-sage uppercase sm:mb-2">
-                                                            Desk
+                                                            Atelier
                                                         </p>
                                                         <MessageParts
                                                             message={message}

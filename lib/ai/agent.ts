@@ -41,7 +41,7 @@ const generalPurposeSubagent: SubAgent = {
 const researchAgent: SubAgent = {
     name: 'research-agent',
     description:
-        'Psychology literature brief: scholarly search, then read 2–3 result pages, and return a fact-dense brief with citations. Does not see the parent chat — put the full question, constraints, and known URLs in the task description. Use for theory comparisons, evidence reviews, and methods — not for greetings or a single lookup.',
+        'Psychology literature brief: rewrite a scholarly search, optionally refine once from hits, read 2–3 pages, return FINDINGS/EVIDENCE/SYNTHESIS/SOURCES/GAPS/FOLLOW_UP. Does not see this chat — description must include QUESTION, SUB_QUESTIONS, CONSTRAINTS, KNOWN_URLS, SUGGESTED_QUERY (rewritten query, not the user sentence). Use for comparisons, evidence reviews, and methods — not greetings or a single lookup.',
     systemPrompt: RESEARCH_AGENT_PROMPT,
     tools: parentTools,
     model: getOllamaModel('deepseek-v4-flash:cloud'),

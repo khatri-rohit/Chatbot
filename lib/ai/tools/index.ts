@@ -45,14 +45,14 @@ export const firecrawlFetchUrlTool = tool(
     {
         name: 'firecrawl_fetch_url_tool',
         description:
-            'Read the live page body for specific psychology sources (papers, reviews, methods pages) and return clipped markdown. Use URLs from a previous internet_search in this thread, or URLs the user pasted. After search, call this when snippets are not enough (quotes, measures, samples). Do not invent URLs. Do not use this instead of internet_search. Max 3 URLs per call.',
+            'Read the live page body for specific psychology sources (papers, reviews, methods pages) and return clipped markdown. Use URLs from a previous internet_search in this thread, or URLs the user pasted. After search, call this when snippets are not enough (quotes, measures, samples). Batch up to 3 URLs in one call — do not fetch one-by-one. Do not invent URLs. Do not use this instead of internet_search.',
         schema: z.object({
             urls: z
                 .array(z.string())
                 .min(1)
                 .max(3)
                 .describe(
-                    'http(s) URLs from internet_search results in this thread, or pasted by the user.',
+                    'http(s) URLs from internet_search results in this thread, or pasted by the user. Prefer the 2–3 richest scholarly hits in a single call.',
                 ),
         }),
     },
@@ -96,18 +96,18 @@ export const webSearch = tool(
     {
         name: 'internet_search',
         description:
-            'Search the live web for psychology research. Returns { query, results: [{ title, url, snippet }] } or { error }. Write a scholarly query (constructs, authors, years, review, meta-analysis). Prefer peer-reviewed and primary sources. Not for weather, news, or general web tasks. Cite the returned URLs. Do not invent sources. Set scrape=true only when snippets are not enough to answer.',
+            'Search the live web for psychology research. Returns { query, results: [{ title, url, snippet }] } or { error }. query MUST be a rewritten scholarly search (constructs, authors, years, review, meta-analysis) — never the user’s chat sentence. If the first hit list is thin or off-topic, call again once with a tighter query using authors/terms from those titles. Prefer peer-reviewed and primary sources. Not for weather, news, or general web tasks. Cite the returned URLs. Do not invent sources. Set scrape=true only for a one-shot parent lookup; if you will firecrawl_fetch_url_tool next, leave scrape false.',
         schema: z.object({
             query: z
                 .string()
                 .describe(
-                    'Scholarly search-box query: constructs, authors, years, and psychology terms.',
+                    'Rewritten scholarly search-box query (not the user question): constructs, authors, years, review/meta-analysis/theory name. Example: working memory Baddeley Hitch review capacity Cowan.',
                 ),
             scrape: z
                 .boolean()
                 .optional()
                 .describe(
-                    'If true, also fetch short page excerpts. Use only when titles/snippets are insufficient.',
+                    'If true, also fetch short page excerpts. Use only when you will not call firecrawl_fetch_url_tool after. Skip when a later fetch will read full pages.',
                 ),
         }),
     },

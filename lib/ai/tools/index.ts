@@ -45,14 +45,14 @@ export const firecrawlFetchUrlTool = tool(
     {
         name: 'firecrawl_fetch_url_tool',
         description:
-            'Read the live page body for specific psychology sources (papers, reviews, methods pages) and return clipped markdown. Use URLs from a previous internet_search in this thread, or URLs the user pasted. After search, call this when snippets are not enough (quotes, measures, samples). Do not invent URLs. Do not use this instead of internet_search. Max 3 URLs per call.',
+            'Read the live page body for specific psychology sources (papers, reviews, methods pages) and return clipped markdown. Use URLs from a previous internet_search in this thread, or URLs the user pasted. After search, call this when snippets are not enough (quotes, measures, samples). Batch up to 3 URLs in one call — do not fetch one-by-one. Do not invent URLs. Do not use this instead of internet_search.',
         schema: z.object({
             urls: z
                 .array(z.string())
                 .min(1)
                 .max(3)
                 .describe(
-                    'http(s) URLs from internet_search results in this thread, or pasted by the user.',
+                    'http(s) URLs from internet_search results in this thread, or pasted by the user. Prefer the 2–3 richest scholarly hits in a single call.',
                 ),
         }),
     },
@@ -96,18 +96,18 @@ export const webSearch = tool(
     {
         name: 'internet_search',
         description:
-            'Search the live web for psychology research. Returns { query, results: [{ title, url, snippet }] } or { error }. Write a scholarly query (constructs, authors, years, review, meta-analysis). Prefer peer-reviewed and primary sources. Not for weather, news, or general web tasks. Cite the returned URLs. Do not invent sources. Set scrape=true only when snippets are not enough to answer.',
+            'Search the live web for psychology research. Returns { query, results: [{ title, url, snippet }] } or { error }. query MUST be a rewritten scholarly search (constructs, authors, years, review, meta-analysis) — never the user’s chat sentence. If the first hit list is thin or off-topic, call again once with a tighter query using authors/terms from those titles. Prefer peer-reviewed and primary sources. Not for weather, news, or general web tasks. Cite the returned URLs. Do not invent sources. Set scrape=true only for a one-shot parent lookup; if you will firecrawl_fetch_url_tool next, leave scrape false.',
         schema: z.object({
             query: z
                 .string()
                 .describe(
-                    'Scholarly search-box query: constructs, authors, years, and psychology terms.',
+                    'Rewritten scholarly search-box query (not the user question): constructs, authors, years, review/meta-analysis/theory name. Example: working memory Baddeley Hitch review capacity Cowan.',
                 ),
             scrape: z
                 .boolean()
                 .optional()
                 .describe(
-                    'If true, also fetch short page excerpts. Use only when titles/snippets are insufficient.',
+                    'If true, also fetch short page excerpts. Use only when you will not call firecrawl_fetch_url_tool after. Skip when a later fetch will read full pages.',
                 ),
         }),
     },
@@ -120,255 +120,4 @@ function isWebSearchEnabled(config: ToolRuntime): boolean {
     const direct = (config as { configurable?: { webSearchEnabled?: boolean } })
         .configurable;
     return Boolean(direct?.webSearchEnabled ?? nested?.webSearchEnabled);
-}
-
-/**
- * LangChain weather tool. Compact JSON stays on the parent message list
- * so follow-ups ("humidity?") can use it without calling the tool again.
- */
-export const getWeather = tool(
-    async (input, config: ToolRuntime) => {
-        const writer = config.writer;
-        let latitude: number;
-        let longitude: number;
-        let place = input.city?.trim() || '';
-
-        if (input.city) {
-            writer?.({
-                type: 'progress',
-                id: `weather-${input.city}`,
-                message: `Looking up coordinates for ${input.city}`,
-                step: 'geocode',
-            });
-
-            const coords = await geocodeCity(input.city);
-            if (!coords) {
-                return {
-                    error: `Could not find coordinates for "${input.city}".`,
-                };
-            }
-            ({ latitude, longitude } = coords);
-            place = coords.name;
-        } else if (
-            input.latitude !== undefined &&
-            input.longitude !== undefined
-        ) {
-            latitude = input.latitude;
-            longitude = input.longitude;
-        } else {
-            return {
-                error: 'Provide a city name or both latitude and longitude.',
-            };
-        }
-
-        writer?.({
-            type: 'progress',
-            id: `weather-${place || 'coords'}`,
-            message: 'Fetching forecast',
-            step: 'forecast',
-        });
-
-        const params = new URLSearchParams({
-            latitude: String(latitude),
-            longitude: String(longitude),
-            timezone: 'auto',
-            current: [
-                'temperature_2m',
-                'apparent_temperature',
-                'relative_humidity_2m',
-                'precipitation',
-                'weather_code',
-                'cloud_cover',
-                'wind_speed_10m',
-                'wind_direction_10m',
-                'is_day',
-            ].join(','),
-            daily: [
-                'weather_code',
-                'temperature_2m_max',
-                'temperature_2m_min',
-                'precipitation_sum',
-                'sunrise',
-                'sunset',
-                'uv_index_max',
-            ].join(','),
-            forecast_days: '2',
-        });
-
-        const response = await fetch(
-            `https://api.open-meteo.com/v1/forecast?${params}`,
-        );
-
-        if (!response.ok) {
-            return { error: 'Weather service did not respond.' };
-        }
-
-        const weatherData = (await response.json()) as OpenMeteoForecast;
-
-        writer?.({
-            type: 'progress',
-            id: `weather-${place || 'coords'}`,
-            message: 'Forecast ready',
-            step: 'done',
-        });
-
-        const current = weatherData.current;
-        const daily = weatherData.daily;
-        const weatherCode = current?.weather_code;
-
-        return {
-            location: {
-                name: place || undefined,
-                latitude,
-                longitude,
-                timezone: weatherData.timezone,
-            },
-            current: {
-                observedAt: current?.time,
-                temperatureC: current?.temperature_2m,
-                feelsLikeC: current?.apparent_temperature,
-                humidityPercent: current?.relative_humidity_2m,
-                precipitationMm: current?.precipitation,
-                cloudCoverPercent: current?.cloud_cover,
-                windSpeedKmh: current?.wind_speed_10m,
-                windDirectionDeg: current?.wind_direction_10m,
-                isDay: current?.is_day === 1,
-                weatherCode,
-                conditions: describeWeatherCode(weatherCode),
-            },
-            today: dailySlice(daily, 0),
-            tomorrow: dailySlice(daily, 1),
-        };
-    },
-    {
-        name: 'get_weather',
-        description:
-            'Get current weather and a short forecast for a city or lat/lng: temperature, feels-like, humidity, wind, precipitation, cloud cover, conditions, sunrise/sunset, and UV. Use for any weather question, not only temperature.',
-        schema: z.object({
-            city: z
-                .string()
-                .describe("City name, e.g. 'Ajmer' or 'San Francisco'")
-                .optional(),
-            latitude: z.number().optional(),
-            longitude: z.number().optional(),
-        }),
-    },
-);
-
-type OpenMeteoForecast = {
-    timezone?: string;
-    current?: {
-        time?: string;
-        temperature_2m?: number;
-        apparent_temperature?: number;
-        relative_humidity_2m?: number;
-        precipitation?: number;
-        weather_code?: number;
-        cloud_cover?: number;
-        wind_speed_10m?: number;
-        wind_direction_10m?: number;
-        is_day?: number;
-    };
-    daily?: {
-        time?: string[];
-        weather_code?: number[];
-        temperature_2m_max?: number[];
-        temperature_2m_min?: number[];
-        precipitation_sum?: number[];
-        sunrise?: string[];
-        sunset?: string[];
-        uv_index_max?: number[];
-    };
-};
-
-function dailySlice(
-    daily: OpenMeteoForecast['daily'] | undefined,
-    index: number,
-) {
-    if (!daily?.time?.[index]) return undefined;
-
-    const weatherCode = daily.weather_code?.[index];
-    return {
-        date: daily.time[index],
-        highC: daily.temperature_2m_max?.[index],
-        lowC: daily.temperature_2m_min?.[index],
-        precipitationMm: daily.precipitation_sum?.[index],
-        sunrise: daily.sunrise?.[index],
-        sunset: daily.sunset?.[index],
-        uvIndexMax: daily.uv_index_max?.[index],
-        weatherCode,
-        conditions: describeWeatherCode(weatherCode),
-    };
-}
-
-/** WMO weather interpretation codes used by Open-Meteo. */
-function describeWeatherCode(code: number | undefined): string | undefined {
-    if (code === undefined) return undefined;
-
-    const labels: Record<number, string> = {
-        0: 'Clear sky',
-        1: 'Mainly clear',
-        2: 'Partly cloudy',
-        3: 'Overcast',
-        45: 'Fog',
-        48: 'Depositing rime fog',
-        51: 'Light drizzle',
-        53: 'Moderate drizzle',
-        55: 'Dense drizzle',
-        61: 'Slight rain',
-        63: 'Moderate rain',
-        65: 'Heavy rain',
-        71: 'Slight snow',
-        73: 'Moderate snow',
-        75: 'Heavy snow',
-        80: 'Slight rain showers',
-        81: 'Moderate rain showers',
-        82: 'Violent rain showers',
-        95: 'Thunderstorm',
-        96: 'Thunderstorm with slight hail',
-        99: 'Thunderstorm with heavy hail',
-    };
-
-    return labels[code] ?? `Weather code ${code}`;
-}
-
-async function geocodeCity(city: string): Promise<{
-    latitude: number;
-    longitude: number;
-    name: string;
-} | null> {
-    try {
-        const response = await fetch(
-            `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=en&format=json`,
-        );
-
-        if (!response.ok) {
-            return null;
-        }
-
-        const data = (await response.json()) as {
-            results?: Array<{
-                name?: string;
-                admin1?: string;
-                country?: string;
-                latitude: number;
-                longitude: number;
-            }>;
-        };
-
-        const [result] = data.results ?? [];
-        if (!result) return null;
-
-        const name = [result.name, result.admin1, result.country]
-            .filter(Boolean)
-            .join(', ');
-
-        return {
-            latitude: result.latitude,
-            longitude: result.longitude,
-            name,
-        };
-    } catch {
-        return null;
-    }
 }

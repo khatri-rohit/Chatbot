@@ -18,24 +18,11 @@ import {
 } from 'langchain';
 
 /**
- * Psychology Deep Agent + one MemorySaver for the Node process.
+ * Psychology Deep Agent. One MemorySaver for the process; `thread_id` is
+ * the checkpoint. Search tools stay on the parent so follow-ups see results.
  *
- * Search and page reads live on the PARENT so tool JSON stays in the
- * same checkpointed message list. Subagents are handoff-isolated: they
- * only see `task.description`, never the chat.
- *
- * Deep Agents auto-inserts `general-purpose` (inherits parent tools).
- * We override that name so isolated search cannot steal the thread.
- * Literature briefs go to `research-agent`.
- *
- * Identity/scope: `memory` loads `lib/ai/harness/AGENTS.md` into the
- * system prompt. `psychologyScope` is the LangChain guardrail
- * (beforeAgent jumpTo end) so coding/weather turns never hit the model.
- *
- * `thread_id` from `useChat({ id })` is the checkpoint key.
- *
- * LangSmith traces this graph when LANGSMITH_TRACING=true (see
- * `lib/ai/tracing.ts` and POST `/api/chat`).
+ * Deep Agents always adds `general-purpose`; we stub it so isolated search
+ * cannot steal the thread. Literature briefs go to `research-agent`.
  */
 const checkpointer = new MemorySaver();
 
@@ -54,23 +41,21 @@ const generalPurposeSubagent: SubAgent = {
 const researchAgent: SubAgent = {
     name: 'research-agent',
     description:
-        'Psychology literature brief: scholarly search, then read 2–3 result pages, and return a fact-dense brief with citations. Does not see the parent chat — put the full question, constraints, and known URLs in the task description. Use for theory comparisons, evidence reviews, and methods — not for greetings or a single lookup.',
+        'Psychology literature brief: rewrite a scholarly search, optionally refine once from hits, read 2–3 pages, return FINDINGS/EVIDENCE/SYNTHESIS/SOURCES/GAPS/FOLLOW_UP. Does not see this chat — description must include QUESTION, SUB_QUESTIONS, CONSTRAINTS, KNOWN_URLS, SUGGESTED_QUERY (rewritten query, not the user sentence). Use for comparisons, evidence reviews, and methods — not greetings or a single lookup.',
     systemPrompt: RESEARCH_AGENT_PROMPT,
-    tools: [...parentTools],
+    tools: parentTools,
     model: getOllamaModel('deepseek-v4-flash:cloud'),
     middleware: [handleToolCalls],
 };
-
-const subagents = [generalPurposeSubagent, researchAgent];
 
 export function getResearchAgent() {
     if (!agentPromise) {
         agentPromise = createDeepAgent({
             name: 'atelier',
-            model: getOllamaModel(),
+            model: getOllamaModel('deepseek-v4-pro:cloud'),
             systemPrompt: PARENT_SYSTEM_PROMPT,
             memory: ['./lib/ai/harness/AGENTS.md'],
-            tools: [...parentTools],
+            tools: parentTools,
             middleware: [
                 psychologyScope,
                 handleToolCalls,
@@ -81,7 +66,7 @@ export function getResearchAgent() {
                 modelFallbackMiddleware('deepseek-v4-pro:0813-cloud'),
             ],
             checkpointer,
-            subagents: [...subagents],
+            subagents: [generalPurposeSubagent, researchAgent],
         });
     }
 

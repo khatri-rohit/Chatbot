@@ -1,6 +1,7 @@
 import { getSiteUrl, siteConfig } from '@/lib/site';
 import type { Metadata, Viewport } from 'next';
 import { Fraunces, Source_Serif_4, IBM_Plex_Mono } from 'next/font/google';
+import 'katex/dist/katex.min.css';
 import './globals.css';
 
 const display = Fraunces({
@@ -73,6 +74,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
     width: 'device-width',
     initialScale: 1,
+    viewportFit: 'cover',
+    interactiveWidget: 'resizes-content',
     themeColor: '#efe4d0',
     colorScheme: 'light',
 };
@@ -81,9 +84,11 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
     return (
         <html
             lang="en"
-            className={`${display.variable} ${serif.variable} ${mono.variable} h-full antialiased`}
+            className={`${display.variable} ${serif.variable} ${mono.variable} h-dvh overflow-hidden antialiased`}
         >
-            <body className="min-h-full flex flex-col">{children}</body>
+            <body className="flex h-full min-h-0 flex-col overflow-hidden">
+                {children}
+            </body>
         </html>
     );
 }

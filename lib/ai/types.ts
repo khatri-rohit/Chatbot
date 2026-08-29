@@ -1,17 +1,5 @@
 import type { UIMessage } from 'ai';
 
-/**
- * Shared UI-message types.
- *
- * Flow:
- *   useChat<DeskUIMessage>  →  POST /api/chat (UIMessage[])
- *     → toBaseMessages()    →  Deep Agent / LangGraph
- *     → toUIMessageStream() →  message.parts in the client
- *
- * Custom `data-*` parts (hitl, progress) are written by the route/tool
- * and rendered in `components/message-parts.tsx`.
- */
-
 export type HitlDecision = {
     type: 'approve' | 'reject';
     message?: string;

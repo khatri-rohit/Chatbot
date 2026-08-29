@@ -1,6 +1,4 @@
-import type { HitlData, HitlDecision } from '@/lib/ai/types';
-
-const WEB_SEARCH_TOOLS = new Set(['internet_search']);
+import type { HitlData } from '@/lib/ai/types';
 
 type GraphInterrupt = {
     id?: string;
@@ -59,12 +57,8 @@ function actionRequestsOf(interrupt: GraphInterrupt) {
 }
 
 /**
- * Reads a LangGraph checkpoint snapshot after the stream ends.
- * Used by `/api/chat` to emit a `data-hitl` UI part the chat view can render.
- *
- * Nested internet_search interrupts live on subgraph tasks. Callers must
- * pass `getState(config, { subgraphs: true })` so `tasks[].state` is filled.
- * pendingCount is hanging actionRequests.length across those interrupts.
+ * Reads a LangGraph snapshot after the stream ends and builds the HITL
+ * card payload. Call `getState(config, { subgraphs: true })`.
  */
 export function extractHitlData(
     snapshot: GraphSnapshot | null | undefined,
@@ -94,21 +88,4 @@ export function extractHitlData(
         pendingCount: actions.length,
         actionNames,
     };
-}
-
-export function isAutoApprovableWebSearch(hitl: HitlData) {
-    const names =
-        hitl.actionNames.length > 0 ? hitl.actionNames : [hitl.actionName];
-    return (
-        names.length > 0 && names.every((name) => WEB_SEARCH_TOOLS.has(name))
-    );
-}
-
-export function webSearchApproveDecisions(
-    pendingCount: number,
-): HitlDecision[] {
-    return Array.from({ length: Math.max(1, pendingCount) }, () => ({
-        type: 'approve' as const,
-        message: 'Approved',
-    }));
 }

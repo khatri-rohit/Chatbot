@@ -1,5 +1,6 @@
 @import 'tailwindcss';
 @import 'streamdown/styles.css';
+@source "../node_modules/streamdown/dist/*.js";
 @source "../node_modules/@streamdown/code/dist/*.js";
 @source "../node_modules/@streamdown/mermaid/dist/*.js";
 @source "../node_modules/@streamdown/math/dist/*.js";
@@ -14,6 +15,19 @@
     --sienna: #b34a22;
     --sage: #3f4f3c;
     --lamp: rgba(255, 214, 160, 0.45);
+
+    --background: var(--paper);
+    --foreground: var(--ink);
+    --card: var(--paper);
+    --card-foreground: var(--ink);
+    --muted: var(--paper-deep);
+    --muted-foreground: var(--ink-soft);
+    --border: var(--rule);
+    --input: var(--paper-deep);
+    --primary: var(--sienna);
+    --primary-foreground: var(--paper);
+    --sidebar: var(--paper-deep);
+    --radius: 0.125rem;
 }
 
 @theme inline {
@@ -23,6 +37,17 @@
     --color-ink-soft: var(--ink-soft);
     --color-sienna: var(--sienna);
     --color-sage: var(--sage);
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+    --color-card: var(--card);
+    --color-card-foreground: var(--card-foreground);
+    --color-muted: var(--muted);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-border: var(--border);
+    --color-input: var(--input);
+    --color-primary: var(--primary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-sidebar: var(--sidebar);
     --font-display: var(--font-display);
     --font-serif: var(--font-serif);
     --font-mono: var(--font-mono);
@@ -30,12 +55,46 @@
 
 html,
 body {
-    min-height: 100%;
+    height: 100%;
     background: var(--paper);
     color: var(--ink);
     font-family: var(--font-serif), 'Times New Roman', serif;
-    scrollbar-width: thin;
-    scrollbar-color: var(--ink) var(--paper);
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+    display: none;
+}
+
+.scrollbar-hidden {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.scrollbar-hidden::-webkit-scrollbar {
+    display: none;
+}
+
+@keyframes desk-nudge {
+    0%,
+    100% {
+        transform: translateY(0);
+    }
+    50% {
+        transform: translateY(6px);
+    }
+}
+
+.animate-desk-nudge {
+    animation: desk-nudge 1.15s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .animate-desk-nudge {
+        animation: none;
+    }
 }
 
 body {
@@ -50,9 +109,18 @@ body {
 }
 
 .assistant-markdown {
-    font-size: 1.05rem;
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    font-size: 1.02rem;
     line-height: 1.7;
     color: var(--ink);
+}
+
+@media (min-width: 640px) {
+    .assistant-markdown {
+        font-size: 1.05rem;
+    }
 }
 
 .assistant-markdown > *:first-child {
@@ -69,15 +137,29 @@ body {
 }
 
 .assistant-markdown h1 {
-    font-size: 1.55rem;
-}
-
-.assistant-markdown h2 {
     font-size: 1.28rem;
 }
 
+.assistant-markdown h2 {
+    font-size: 1.14rem;
+}
+
 .assistant-markdown h3 {
-    font-size: 1.12rem;
+    font-size: 1.06rem;
+}
+
+@media (min-width: 640px) {
+    .assistant-markdown h1 {
+        font-size: 1.55rem;
+    }
+
+    .assistant-markdown h2 {
+        font-size: 1.28rem;
+    }
+
+    .assistant-markdown h3 {
+        font-size: 1.12rem;
+    }
 }
 
 .assistant-markdown p {
@@ -115,23 +197,32 @@ body {
     text-underline-offset: 3px;
 }
 
-.assistant-markdown code {
+.assistant-markdown :not(pre) > code {
     font-family: var(--font-mono), ui-monospace, monospace;
     font-size: 0.86em;
-    background: rgba(36, 24, 15, 0.06);
-    padding: 0.12em 0.35em;
 }
 
 .assistant-markdown pre {
     overflow-x: auto;
-    margin: 1em 0;
-    padding: 0.9em 1em;
-    background: #2a2118;
-    color: #f3e6d4;
+    max-width: 100%;
+    -webkit-overflow-scrolling: touch;
 }
 
-.assistant-markdown pre code {
-    background: transparent;
-    padding: 0;
-    color: inherit;
+.assistant-markdown table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.assistant-markdown img,
+.assistant-markdown video {
+    max-width: 100%;
+    height: auto;
+}
+
+.assistant-markdown .katex-display {
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
 }

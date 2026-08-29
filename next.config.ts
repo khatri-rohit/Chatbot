@@ -1,8 +1,14 @@
-import type { NextConfig } from "next";
+import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  // Keep LangSmith's AsyncLocalStorage tracer out of the bundler.
-  serverExternalPackages: ["langsmith"],
+  serverExternalPackages: ['langsmith', 'langium', '@mermaid-js/parser'],
+  transpilePackages: ['shiki'],
+  turbopack: {
+    resolveAlias: {
+      'vscode-jsonrpc': { browser: './lib/empty.ts' },
+      langium: { browser: './lib/empty.ts' },
+    },
+  },
 };
 
 export default nextConfig;

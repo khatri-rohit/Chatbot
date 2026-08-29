@@ -1,18 +1,8 @@
 /**
- * POST /api/chat — AI SDK UI message stream over Deep Agents.
+ * POST /api/chat — stream Deep Agent output as AI SDK UI messages.
  *
- * Client (`useChat` + DefaultChatTransport):
- *   { id, messages, resume?, webSearchEnabled? }
- *
- * `webSearchEnabled` is copied onto LangGraph `configurable` so
- * `internet_search` can run or return a structured "pin off" error.
- * HITL auto-approve remains as a safety net if a nested interrupt appears.
- *
- * New user turns append only the latest HumanMessage when a checkpoint
- * already exists for `id`. HITL resume is always Command({ resume }).
- *
- * LangSmith: each POST is one root run (`atelier-chat-turn`). LangGraph
- * model/tool spans nest under it when LANGSMITH_TRACING=true.
+ * Body: `{ id, messages, resume?, webSearchEnabled? }`
+ * `id` is the LangGraph thread. Existing threads append only the last user turn.
  */
 import { getResearchAgent } from '@/lib/ai/agent';
 import { extractHitlData } from '@/lib/ai/hitl';
@@ -41,13 +31,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
-const FIRST_PIPE_STREAM_MODE = [
-    'values',
-    'messages',
-    'tools',
-    'custom',
-] as const;
-/** Resume re-runs the interrupted node. Skip `values` so checkpoint history is not re-emitted as new tool cards. Keep `tools` so the approved internet_search still appears once. */
+const STREAM_MODE: StreamMode[] = ['values', 'messages', 'tools', 'custom'];
 
 type Agent = Awaited<ReturnType<typeof getResearchAgent>>;
 type ThreadConfig = {
@@ -97,8 +81,6 @@ export async function POST(req: Request) {
             ? new Command({ resume: { decisions: resume.decisions } })
             : await humanTurnInput(agent, config, messages, threadId);
 
-        const seenTools = createToolDedupe();
-
         if (isLangSmithTracingEnabled()) {
             console.info('[langsmith]', {
                 project: langSmithProjectName(),
@@ -125,8 +107,6 @@ export async function POST(req: Request) {
                                 input,
                                 tracedConfig,
                                 writer,
-                                seenTools,
-                                FIRST_PIPE_STREAM_MODE,
                                 Boolean(webSearchEnabled),
                             );
 
@@ -200,81 +180,17 @@ async function humanTurnInput(
     };
 }
 
-function createToolDedupe() {
-    const priorIds = new Set<string>();
-    const priorPayloads = new Set<string>();
-
-    return {
-        beginPipe() {
-            return {
-                ids: new Set<string>(),
-                payloads: new Set<string>(),
-            };
-        },
-        commitPipe(pipe: { ids: Set<string>; payloads: Set<string> }) {
-            for (const id of pipe.ids) priorIds.add(id);
-            for (const payload of pipe.payloads) priorPayloads.add(payload);
-        },
-        shouldSkip(
-            chunk: UiChunk,
-            pipe: { ids: Set<string>; payloads: Set<string> },
-        ) {
-            if (!isToolUiChunk(chunk)) return false;
-
-            const id =
-                'toolCallId' in chunk && typeof chunk.toolCallId === 'string'
-                    ? chunk.toolCallId
-                    : undefined;
-            const payload = toolPayloadKey(chunk);
-
-            const skip =
-                (id != null && priorIds.has(id)) ||
-                (payload != null && priorPayloads.has(payload));
-
-            if (id) pipe.ids.add(id);
-            if (payload) pipe.payloads.add(payload);
-            if (skip && id) priorIds.add(id);
-
-            return skip;
-        },
-    };
-}
-
-function isInterruptToolErrorChunk(chunk: UiChunk): boolean {
+function isInterruptToolError(chunk: UiChunk): boolean {
     if (chunk.type !== 'tool-output-error') return false;
     const text =
         'errorText' in chunk && typeof chunk.errorText === 'string'
             ? chunk.errorText
             : '';
     return (
-        /"actionRequests"\s*:/.test(text) ||
-        /GraphInterrupt/i.test(text) ||
-        /Number of human decisions/i.test(text) ||
-        /hanging tool calls/i.test(text)
+        /actionRequests|GraphInterrupt|human decisions|hanging tool calls/i.test(
+            text,
+        )
     );
-}
-
-function isToolUiChunk(chunk: UiChunk): boolean {
-    return typeof chunk.type === 'string' && chunk.type.startsWith('tool-');
-}
-
-function toolPayloadKey(chunk: UiChunk): string | undefined {
-    if (
-        chunk.type !== 'tool-input-start' &&
-        chunk.type !== 'tool-input-available' &&
-        chunk.type !== 'tool-input-error'
-    ) {
-        return undefined;
-    }
-
-    const name =
-        'toolName' in chunk && typeof chunk.toolName === 'string'
-            ? chunk.toolName
-            : '';
-    if (name !== 'task' && name !== 'internet_search') return undefined;
-
-    const input = 'input' in chunk ? JSON.stringify(chunk.input ?? null) : '';
-    return `${name}:${input}`;
 }
 
 async function pipeAgentUi(
@@ -282,14 +198,12 @@ async function pipeAgentUi(
     input: unknown,
     config: ThreadConfig,
     writer: { write: (chunk: UiChunk) => void },
-    seenTools: ReturnType<typeof createToolDedupe>,
-    streamMode: readonly StreamMode[],
     hideSearchApproval: boolean,
 ) {
     const langchainStream = await agent.stream(input, {
         ...config,
         subgraphs: true,
-        streamMode: [...streamMode],
+        streamMode: STREAM_MODE,
     });
 
     const uiStream = toUIMessageStream(
@@ -297,7 +211,6 @@ async function pipeAgentUi(
         { sendStart: false, sendFinish: false },
     );
 
-    const pipe = seenTools.beginPipe();
     const reader = uiStream.getReader();
     try {
         while (true) {
@@ -305,15 +218,13 @@ async function pipeAgentUi(
             if (done) break;
             if (!value) continue;
             const chunk = value as UiChunk;
-            if (isInterruptToolErrorChunk(chunk)) continue;
+            if (isInterruptToolError(chunk)) continue;
             if (hideSearchApproval && chunk.type === 'tool-approval-request') {
                 continue;
             }
-            if (seenTools.shouldSkip(chunk, pipe)) continue;
             writer.write(chunk);
         }
     } finally {
-        seenTools.commitPipe(pipe);
         reader.releaseLock();
     }
 }

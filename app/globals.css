@@ -77,6 +77,26 @@ body::-webkit-scrollbar {
     display: none;
 }
 
+@keyframes desk-nudge {
+    0%,
+    100% {
+        transform: translateY(0);
+    }
+    50% {
+        transform: translateY(6px);
+    }
+}
+
+.animate-desk-nudge {
+    animation: desk-nudge 1.15s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .animate-desk-nudge {
+        animation: none;
+    }
+}
+
 body {
     background-image:
         radial-gradient(1200px 700px at 18% -10%, var(--lamp), transparent 55%),

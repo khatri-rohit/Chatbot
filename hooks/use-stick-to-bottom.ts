@@ -1,6 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import {
+    useCallback,
+    useEffect,
+    useLayoutEffect,
+    useRef,
+    useState,
+} from 'react';
 
 const BOTTOM_SLACK = 80;
 
@@ -19,9 +25,11 @@ export function useStickToBottom(watch: unknown) {
     const scrollerRef = useRef<HTMLElement>(null);
     const contentRef = useRef<HTMLDivElement>(null);
     const stickToBottomRef = useRef(true);
+    const [atBottom, setAtBottom] = useState(true);
 
     const pin = useCallback(() => {
         stickToBottomRef.current = true;
+        setAtBottom(true);
         const scroller = scrollerRef.current;
         if (scroller) scroller.scrollTop = scroller.scrollHeight;
     }, []);
@@ -49,7 +57,9 @@ export function useStickToBottom(watch: unknown) {
         };
 
         const onScroll = () => {
-            stickToBottomRef.current = isScrolledToBottom(scroller);
+            const next = isScrolledToBottom(scroller);
+            stickToBottomRef.current = next;
+            setAtBottom((prev) => (prev === next ? prev : next));
         };
 
         scroller.addEventListener('scroll', onScroll, { passive: true });
@@ -63,5 +73,5 @@ export function useStickToBottom(watch: unknown) {
         };
     }, []);
 
-    return { scrollerRef, contentRef, pin };
+    return { scrollerRef, contentRef, pin, atBottom };
 }
